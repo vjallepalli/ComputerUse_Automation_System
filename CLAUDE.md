@@ -73,6 +73,21 @@ Each code package has an `__init__.py` with a one-line docstring placeholder.
 | `/evidence`    | Structured JSONL logger, screenshot / DOM-snapshot writer, redaction. Everything persisted about a run goes through here. |
 | `/target_app`  | Local Flask demo app: the legacy bank back-office UI stand-in. |
 | `/artifacts`   | Saved Capability JSON files — the discovery run's output. Data only, not a Python package (`.gitkeep`, contents generated). |
+
+### Output path convention (tracked vs. ignored)
+
+Symmetric split so `git add -A` is always safe and curated deliverables never need `git add -f`:
+
+| Written by | Path | Git |
+|------------|------|-----|
+| Every discovery/replay run (raw logs, screenshots, DOM snapshots) | `evidence/runs/<run-id>/` | ignored |
+| Every discovery run (working/scratch artifacts) | `artifacts/runs/<run-id>.json` | ignored |
+| Curated, redacted evidence bundle kept as a deliverable example | `evidence/examples/<name>/` | **tracked** |
+| Curated Capability artifact(s) — the deliverable | `artifacts/<name>.json` (root) | **tracked** |
+
+Code that persists run output writes under `runs/` by default. Promoting a run to a
+committed example is a deliberate copy into `examples/` (evidence) or `artifacts/`
+root — after re-checking redaction.
 | `/tests`       | Test suite, top-level, mirroring the package layout (`tests/agent/`, `tests/guardrail/`, …). |
 
 Root files: `CLAUDE.md`, `.gitignore` (committed first), `.env.example`,

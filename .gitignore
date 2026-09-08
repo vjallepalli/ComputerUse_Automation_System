@@ -27,7 +27,11 @@ htmlcov/
 # Browser binaries are installed via `playwright install`, not vendored.
 
 # --- Run output (generated; may contain redacted-but-still-sensitive context) ---
+# Generated run captures are ignored. Curated, redacted deliverable bundles live
+# outside these dirs (evidence/examples/, artifacts/*.json) and commit normally --
+# no `git add -f` needed.
 /evidence/runs/
+/artifacts/runs/
 
 # --- OS ---
 .DS_Store
