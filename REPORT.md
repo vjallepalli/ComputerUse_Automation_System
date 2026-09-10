@@ -38,19 +38,19 @@ actually thinking, and **replay**, where it isn't. Here's the shape of the whole
  │ (Claude, one action/turn)│                          │ NO model call            │
  └────────────┬─────────────┘                          └────────────┬─────────────┘
               ▼
- ┌──────────────────────────┐   ◄── SAME CHECK, called from both sides, not duplicated
+ ┌───────────────────────────┐   ◄── SAME CHECK, called from both sides, not duplicated
  │ guardrail check:          │
  │ safe → act automatically  │
  │ risky/sensitive → STOP,   │
  │ hand the SAME live browser│
  │ to a human, wait, resume  │
- └────────────┬─────────────┘
+ └────────────┬──────────────┘
               │  repeats until the goal is met                         │
               ▼                                                        ▼
  ┌──────────────────────────┐                          success / business_outcome / failure
- │ record the run as a       │                              (typed, structured result)
- │ typed, reusable            │
- │ Capability artifact        │  ── saved once ──────────────────────► reused above, forever
+ │ record the run as a      │                              (typed, structured result)
+ │ typed, reusable          │
+ │ Capability artifact      │  ── saved once ─────────────────► reused above, forever
  └──────────────────────────┘
 ```
 
@@ -70,13 +70,7 @@ fresh, disconnected one.
   recipe and carries it out step by step, with **no AI call at all** — same steps, new input
   values, instant, free, and predictable.
 
-**Why text, not screenshots.** I chose to have the AI read a cleaned-up version of the page's
-underlying markup, rather than look at a picture of the screen. The target application has no
-labeled buttons or IDs for anything — it's exactly the kind of messy, old-style interface real
-banking software actually has. Reading structure lets me point at a specific, nameable thing
-("the field labeled Member Number") that a script can click reliably later. A screenshot would
-tell the AI *where* something looks like a button, not *which* button it durably is — and that
-distinction is what makes replay trustworthy instead of fragile.
+**Why text, not screenshots.** I chose to have the AI read a cleaned-up version of the page's DOM — the browser's structured representation of the page, not a picture of it — rather than look at a screenshot. The target application has no labeled buttons or IDs for anything — it's exactly the kind of messy, old-style interface real banking software actually has. Reading the DOM lets me point at a specific, nameable thing ("the field labeled Member Number") that a script can click reliably later. A screenshot would tell the AI where something looks like a button, not which button it durably is in the underlying structure — and that distinction is what makes replay trustworthy instead of fragile.
 
 Here's a concrete example of exactly how unhelpful a screenshot alone would be here — the
 sub-account form has three input fields with no visible labels tying them to their names in the

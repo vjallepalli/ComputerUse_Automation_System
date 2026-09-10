@@ -2,7 +2,7 @@
 
 **An LLM figures out a legacy banking UI once. From then on, the job runs without it.**
 
-I built this around a question the brief poses directly: banks and credit unions run a long tail
+This was built to navigate through a problem the brief poses directly: banks and credit unions run a long tail
 of back-office software with no API — the only way in is the same UI a human operator uses. Paying
 a model to re-read and re-reason about that UI on every single invocation is slow, expensive, and
 non-deterministic in exactly the place production automation can't afford to be.
