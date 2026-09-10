@@ -20,11 +20,11 @@ test IDs, no semantic labels): every action is checked against a **safety guardr
 runs — writes and sensitive-data fields are never auto-executed — and when the system genuinely
 can't proceed safely, it **hands the same live browser session to a human**, waits, and resumes
 once they're done. Both are demonstrated end-to-end with real evidence in `/evidence/`, not just
-built and left untested — see the honest limits in [`AUDIT.md`](AUDIT.md) for what that testing
+built and left untested — see the honest limits in [`SELF_CHECK.md`](SELF_CHECK.md) for what that testing
 actually surfaced.
 
 See [REPORT.md](REPORT.md) for the full design write-up (architecture, artifact schema,
-determinism & error handling, heterogeneity, escalation, safety, cuts) and [`AUDIT.md`](AUDIT.md)
+determinism & error handling, heterogeneity, escalation, safety, cuts) and [`SELF_CHECK.md`](SELF_CHECK.md)
 for a section-by-section check against the brief, done before submission rather than left for a
 reviewer to find. [CLAUDE.md](CLAUDE.md) has the package-level conventions.
 
