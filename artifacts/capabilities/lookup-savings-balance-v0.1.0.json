@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "name": "Look up savings balance",
+  "description": "Looks up a member by number and reads their current savings balance.",
+  "created_from_run": "20260909T194536Z",
+  "target_app": "http://127.0.0.1:5001",
+  "parameters": [
+    {
+      "name": "member_number",
+      "type": "int",
+      "description": "Value entered into the 'Member number' field.",
+      "example": "10003"
+    }
+  ],
+  "steps": [
+    {
+      "step_number": 1,
+      "action": "type",
+      "target": {
+        "strategy": "label",
+        "value": "Member number"
+      },
+      "value_template": "{member_number}"
+    },
+    {
+      "step_number": 2,
+      "action": "click",
+      "target": {
+        "strategy": "text_contains",
+        "value": "Retrieve"
+      },
+      "value_template": null
+    }
+  ],
+  "outputs": [
+    {
+      "name": "savings_balance",
+      "type": "float",
+      "description": "The member's Savings account balance, read from the account detail table via next_cell 'Savings' (the <td> after the 'Savings' type cell).",
+      "extraction": {
+        "strategy": "next_cell",
+        "target": "Savings"
+      }
+    }
+  ],
+  "success_condition": {
+    "strategy": "text_contains",
+    "target": "Savings",
+    "description": "The output selector (text_contains 'Savings') must resolve on the final page: if the value can be read, the flow reached its end state."
+  }
+}

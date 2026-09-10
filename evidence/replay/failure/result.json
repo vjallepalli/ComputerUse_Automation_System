@@ -1,0 +1,16 @@
+{
+  "status": "failure",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "10003"
+  },
+  "outputs": null,
+  "business_outcome": null,
+  "failure": {
+    "step_number": -1,
+    "expected": "launch the browser, sign on to the target app, and start replay",
+    "observed": "Error: Page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5001/ Call log: - navigating to \"http://127.0.0.1:5001/\", waiting until \"load\"",
+    "message": "replay could not start: CLI setup failed before the engine (target app unreachable, browser launch failed, or sign-on failed) -- full traceback in error.txt"
+  }
+}

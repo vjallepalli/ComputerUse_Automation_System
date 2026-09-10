@@ -1,0 +1,14 @@
+{
+  "status": "business_outcome",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "10004"
+  },
+  "outputs": null,
+  "business_outcome": {
+    "code": "restricted",
+    "message": "member is flagged restricted; lookup and account maintenance are denied"
+  },
+  "failure": null
+}

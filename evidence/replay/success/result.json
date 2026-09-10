@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "10003"
+  },
+  "outputs": {
+    "savings_balance": 812.55
+  },
+  "business_outcome": null,
+  "failure": null
+}

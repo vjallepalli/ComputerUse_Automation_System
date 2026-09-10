@@ -1,0 +1,4 @@
+{"step_number": 1, "action": "type", "target": {"strategy": "label", "value": "Member number"}, "value": "10003", "attempts": 1, "status": "ok", "error": null}
+{"step_number": 2, "action": "click", "target": {"strategy": "text_contains", "value": "Retrieve"}, "value": null, "attempts": 1, "status": "ok", "error": null}
+{"check": "success_condition", "status": "ok"}
+{"check": "extraction", "status": "ok", "outputs": {"savings_balance": 812.55}}

@@ -1,0 +1,11 @@
+{
+  "run_id": "20260910T002345Z",
+  "capability_id_or_goal": "Open a new sub-account for member 10001 and reach the confirmation screen",
+  "step_number": 6,
+  "tier": "blocked",
+  "reason": "type into a sensitive field ('ssn' in 'verify member ssn') -> blocked; the agent must never autofill secret data; blocked tier never auto-executes -> escalate",
+  "current_url": "http://127.0.0.1:5001/member/10001/sub-account",
+  "dom_snapshot_path": "20260910T002404_378497Z.dom.html",
+  "screenshot_path": "20260910T002404_378497Z.png",
+  "timestamp": "2026-09-10T00:24:04.378497+00:00"
+}

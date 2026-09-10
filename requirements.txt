@@ -1,0 +1,10 @@
+# Runtime + test deps for what is currently implemented.
+# target_app: Flask. discovery surface + schema: playwright, pydantic, beautifulsoup4.
+# agent decide step (ask_claude): anthropic. Only the discovery run reads an API key.
+Flask==3.0.3
+pytest==8.3.3
+pydantic==2.10.4
+beautifulsoup4==4.12.3
+playwright==1.49.1
+anthropic==1.4.0
+python-dotenv==1.0.1

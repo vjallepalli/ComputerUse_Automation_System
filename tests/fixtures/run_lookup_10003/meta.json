@@ -1,0 +1,11 @@
+{
+  "run_id": "run_lookup_10003",
+  "goal": "Look up member 10003 and read their current savings balance",
+  "model": "claude-sonnet-5",
+  "start_url": "http://127.0.0.1:5001/member",
+  "max_steps": 25,
+  "started_at": "2026-09-08T21:14:02.101000+00:00",
+  "finished_at": "2026-09-08T21:14:19.887000+00:00",
+  "exit_code": 0,
+  "stop_reason": "done at step 3: savings balance 812.55 is shown on the account detail page"
+}

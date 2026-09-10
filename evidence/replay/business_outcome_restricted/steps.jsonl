@@ -1,0 +1,3 @@
+{"step_number": 1, "action": "type", "target": {"strategy": "label", "value": "Member number"}, "value": "10004", "attempts": 1, "status": "ok", "error": null}
+{"step_number": 2, "action": "click", "target": {"strategy": "text_contains", "value": "Retrieve"}, "value": null, "attempts": 1, "status": "ok", "error": null}
+{"step_number": 2, "check": "business_outcome", "code": "restricted"}

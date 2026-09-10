@@ -1,0 +1,14 @@
+{
+  "status": "business_outcome",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "99999"
+  },
+  "outputs": null,
+  "business_outcome": {
+    "code": "not_found",
+    "message": "member number is not on file"
+  },
+  "failure": null
+}
