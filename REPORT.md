@@ -22,6 +22,14 @@ Both halves share the same guardrail check and the same browser session, deliber
 separate copies — a duplicated safety check is a gap waiting to drift apart, and a shared browser
 session is what makes the human handoff (§5) real instead of simulated.
 
+**Single process, no queue or service split.** Discovery and replay run in one process against a
+local browser and the filesystem — no broker, no separate services. At this scale that's not a
+shortcut, it's the right call: a queue or service boundary would add real operational complexity
+(state to serialize, a second failure mode to handle) for a workload that's one browser session at
+a time. The Capability schema doesn't assume single-process, though — it's plain, storable JSON, so
+splitting discovery and replay into separate services later wouldn't require touching the artifact
+format at all.
+
 **Why the DOM, not screenshots.** I have the AI read a cleaned-up **DOM** — the browser's structured
 representation of the page — rather than a picture of it. The target app has no test IDs or
 semantic labels, exactly like real legacy banking software. Reading the DOM lets me point at a
