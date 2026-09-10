@@ -19,7 +19,7 @@ import pytest
 import replay.cli as cli
 from replay.cli import main
 from schema.replay import (
-    BusinessOutcome, FailureDetail, ReplayResult, StabilityReport,
+    BusinessOutcome, FailureDetail, ReplayResult, StabilityReport, StabilitySignal,
 )
 
 _CAP = SimpleNamespace(capability_id="lookup-savings-balance", version="0.1.0")
@@ -126,12 +126,17 @@ def test_report_round_trips_through_json():
 
 
 def _capability_json() -> str:
+    from datetime import datetime, timezone
+
     from schema.action import Target
     from schema.capability import (
-        Capability, CapabilityStep, Extraction, OutputSpec, Parameter, SuccessCondition,
+        ApprovalRecord, Capability, CapabilityStep, Extraction, OutputSpec, Parameter,
+        SuccessCondition,
     )
     return Capability(
         capability_id="lookup-savings-balance", version="0.1.0",
+        status="approved",  # exercise --repeat, not the draft gate
+        approval=ApprovalRecord(approved_at=datetime(2026, 1, 1, tzinfo=timezone.utc)),
         name="Look up savings balance", description="d", created_from_run="r",
         target_app="http://127.0.0.1:5001",
         parameters=[Parameter(name="member_number", type="int", description="d",
@@ -293,3 +298,66 @@ def test_repeat_zero_is_rejected(cli_env, capsys):
     assert code == 1
     assert calls["n"] == 0
     assert "--repeat must be >= 1" in capsys.readouterr().err
+
+
+# --- StabilitySignal.from_reports (the confidence signal, brief section 8) ---
+
+
+def _report(results, capability_id="lookup-savings-balance", version="0.1.0"):
+    cap = SimpleNamespace(capability_id=capability_id, version=version)
+    return StabilityReport.from_runs(cap, _PARAMS, _runs(results))
+
+
+def test_signal_says_no_data_when_no_reports_match():
+    sig = StabilitySignal.from_reports("lookup-savings-balance", "0.1.0", [])
+    assert sig.reports_found == 0
+    assert sig.identical_output_pct is None
+    assert "no stability data yet" in sig.summary
+
+
+def test_signal_ignores_reports_for_a_different_capability_or_version():
+    other_cap = _report([_success({"b": 1})] * 3, capability_id="something-else")
+    other_ver = _report([_success({"b": 1})] * 3, version="0.2.0")
+    sig = StabilitySignal.from_reports("lookup-savings-balance", "0.1.0",
+                                      [other_cap, other_ver])
+    assert sig.reports_found == 0
+    assert "no stability data yet" in sig.summary
+
+
+def test_signal_is_100_pct_when_every_successful_run_agrees():
+    r1 = _report([_success({"savings_balance": 812.55})] * 5)
+    r2 = _report([_success({"savings_balance": 812.55})] * 3)
+    sig = StabilitySignal.from_reports("lookup-savings-balance", "0.1.0", [r1, r2])
+
+    assert sig.reports_found == 2
+    assert sig.total_runs == 8
+    assert sig.successful_runs == 8
+    assert sig.identical_output_pct == 100.0
+    assert "100% of successful runs returned identical outputs" in sig.summary
+
+
+def test_signal_drops_below_100_pct_when_a_run_diverged():
+    report = _report([_success({"savings_balance": 812.55}),
+                      _success({"savings_balance": 812.55}),
+                      _success({"savings_balance": 999.99}),
+                      _success({"savings_balance": 812.55})])
+    sig = StabilitySignal.from_reports("lookup-savings-balance", "0.1.0", [report])
+
+    assert sig.successful_runs == 4
+    assert sig.identical_output_pct == 75.0            # 3 of 4 share the modal value
+
+
+def test_signal_with_reports_but_no_successful_runs():
+    report = _report([_failure(2, "x"), _business("restricted")])
+    sig = StabilitySignal.from_reports("lookup-savings-balance", "0.1.0", [report])
+
+    assert sig.reports_found == 1
+    assert sig.successful_runs == 0
+    assert sig.identical_output_pct is None
+    assert "no output-determinism signal" in sig.summary
+
+
+def test_signal_round_trips_through_json():
+    sig = StabilitySignal.from_reports(
+        "lookup-savings-balance", "0.1.0", [_report([_success({"b": 1})] * 2)])
+    assert StabilitySignal.model_validate_json(sig.model_dump_json()) == sig

@@ -165,6 +165,12 @@ def record_capability(
     return Capability(
         capability_id=capability_id,
         version=INITIAL_CAPABILITY_VERSION,
+        # Recording a capability once does NOT make it trusted for unattended
+        # replay. It ships as a draft; a human clears it via `python -m
+        # agent.approve`. Stated explicitly (not left to the schema default) so a
+        # future default change can't silently promote fresh recordings.
+        # Regression: tests/agent/test_record.py::test_recorder_always_emits_draft.
+        status="draft",
         name=name,
         description=description,
         created_from_run=meta.get("run_id", run_dir.name),

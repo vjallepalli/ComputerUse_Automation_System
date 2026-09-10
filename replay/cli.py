@@ -17,6 +17,13 @@ extracted byte-identical outputs -- replay is meant to be deterministic. Exit 1
 if any run failed OR the outputs were not all identical. Default N=1 is the
 existing single-run behaviour, unchanged, and writes no stability report.
 
+Approval gate (brief section 8 stretch goal): a capability with
+status="draft" is not cleared for UNATTENDED replay. Before any browser work,
+it escalates to a human via the same pause/resume mechanism a guardrail stop
+uses -- resume runs this invocation only (no promotion), reject stops with
+exit 1. `python -m agent.approve` is the deliberate draft -> approved step. An
+already-approved capability skips the gate: no behaviour change.
+
 `replay_capability` guarantees "any escaped exception -> ReplayResult(failure)",
 but that only covers the engine. CLI-level SETUP -- browser launch, initial
 navigation, sign-on -- runs before the engine is called, so main() adds an OUTER
@@ -36,6 +43,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from escalation.handoff import request_replay_approval
 from guardrail.policy import resolve_max_auto_tier
 from replay.engine import DEFAULT_RETRY_WAIT_S, default_run_id, replay_capability
 from schema.capability import Capability
@@ -94,6 +102,25 @@ def main(argv=None) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"replay {capability.capability_id} v{capability.version}  "
           f"(max auto risk tier = {max_auto_tier.value})")
+
+    # --- approval gate: a draft capability is not cleared for UNATTENDED
+    # replay. Route it through the SAME pause/resume mechanism a guardrail stop
+    # uses (request_replay_approval, adapted for "no page yet" -- see its
+    # docstring). resume => run this invocation only; reject => stop cleanly.
+    # An approved capability skips this entirely: no behaviour change. One
+    # approval covers the whole invocation, including a --repeat batch; it does
+    # NOT promote the file (that's `python -m agent.approve`).
+    if capability.status == "draft":
+        gate = request_replay_approval(capability, run_id=run_id)
+        if gate.action == "reject":
+            print("\nreplay stopped: this capability is a draft and was not "
+                  "cleared for unattended replay.", file=sys.stderr)
+            print(f"  approve it:  python -m agent.approve --capability "
+                  f"{args.capability}", file=sys.stderr)
+            return 1
+        print("\ncontinuing under human approval for this run only; the "
+              "capability stays 'draft' (approve it with `python -m agent.approve` "
+              "to replay it unattended).\n")
 
     # --- single run: unchanged behaviour, no stability report -------------
     if args.repeat == 1:

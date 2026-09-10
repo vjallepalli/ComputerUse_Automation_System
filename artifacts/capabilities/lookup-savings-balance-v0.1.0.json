@@ -2,6 +2,11 @@
   "schema_version": "1.0",
   "capability_id": "lookup-savings-balance",
   "version": "0.1.0",
+  "status": "approved",
+  "approval": {
+    "approved_at": "2026-09-10T20:26:59.451365Z",
+    "note": "reviewed; 5-run stability report shows 100% identical outputs"
+  },
   "name": "Look up savings balance",
   "description": "Looks up a member by number and reads their current savings balance.",
   "created_from_run": "20260909T194536Z",

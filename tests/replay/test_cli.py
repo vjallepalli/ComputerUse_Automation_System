@@ -6,19 +6,27 @@ the capability file is loaded before the setup try/except, so a missing or
 hand-broken artifact used to dump a raw traceback -- now one clean line, exit 1.
 """
 
+from datetime import datetime, timezone
+
 import playwright.sync_api
 
 from replay.cli import main
 from schema.action import Target
 from schema.capability import (
-    Capability, CapabilityStep, Extraction, OutputSpec, Parameter, SuccessCondition,
+    ApprovalRecord, Capability, CapabilityStep, Extraction, OutputSpec, Parameter,
+    SuccessCondition,
 )
 from schema.replay import ReplayResult
 
 
 def _capability_json() -> str:
+    # status="approved" so these CLI tests exercise the replay flow itself, not
+    # the draft approval gate (that gate has its own tests in
+    # tests/replay/test_approval_gate.py).
     return Capability(
         capability_id="lookup-savings-balance", version="0.1.0",
+        status="approved",
+        approval=ApprovalRecord(approved_at=datetime(2026, 1, 1, tzinfo=timezone.utc)),
         name="Look up savings balance", description="d", created_from_run="r",
         target_app="http://127.0.0.1:5001",
         parameters=[Parameter(name="member_number", type="int", description="d", example="10003")],

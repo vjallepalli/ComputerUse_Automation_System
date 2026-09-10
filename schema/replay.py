@@ -24,6 +24,7 @@ surfaces here.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -216,3 +217,70 @@ def _key_output(result: "ReplayResult") -> Optional[str]:
     if result.status == "failure" and result.failure is not None:
         return f"step {result.failure.step_number}: {result.failure.message}"
     return None
+
+
+# --- confidence signal (brief section 8: "score artifacts by how reliably they
+# replay") -----------------------------------------------------------------
+#
+# NOT a persisted field on the Capability -- a summary computed at display /
+# approval time from whatever stability_report.json files currently exist for
+# the capability. It reflects current evidence, never a stale snapshot; with no
+# reports it says so plainly rather than inventing a number.
+
+
+class StabilitySignal(BaseModel):
+    """Derived reliability summary for one capability+version, from its
+    StabilityReport(s). Built by `from_reports`; never stored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reports_found: int = Field(description="stability_report.json files matched.")
+    total_runs: int = Field(description="Replays summed across those reports.")
+    successful_runs: int = Field(description="Of those, how many ended in success.")
+    identical_output_pct: Optional[float] = Field(
+        default=None,
+        description="Of the successful runs, the % that produced the single most "
+        "common output value. 100.0 == fully deterministic so far. None when "
+        "there are no successful runs to compare.",
+    )
+    summary: str = Field(description="One-line human-readable signal.")
+
+    @classmethod
+    def from_reports(cls, capability_id: str, version: str,
+                     reports: list["StabilityReport"]) -> "StabilitySignal":
+        matching = [r for r in reports
+                    if r.capability_id == capability_id and r.version == version]
+        if not matching:
+            return cls(
+                reports_found=0, total_runs=0, successful_runs=0,
+                identical_output_pct=None,
+                summary=("no stability data yet -- generate some with "
+                         "`python -m replay --capability <path> --param ... --repeat N`"),
+            )
+
+        total_runs = sum(r.total_runs for r in matching)
+        success_outputs = [
+            rs.key_output
+            for r in matching for rs in r.per_run
+            if rs.status == "success"
+        ]
+        if not success_outputs:
+            return cls(
+                reports_found=len(matching), total_runs=total_runs,
+                successful_runs=0, identical_output_pct=None,
+                summary=(f"{len(matching)} stability report(s), {total_runs} run(s), "
+                         "none succeeded -- no output-determinism signal"),
+            )
+
+        modal, modal_n = Counter(success_outputs).most_common(1)[0]
+        pct = round(100.0 * modal_n / len(success_outputs), 1)
+        return cls(
+            reports_found=len(matching),
+            total_runs=total_runs,
+            successful_runs=len(success_outputs),
+            identical_output_pct=pct,
+            summary=(f"{len(matching)} stability report(s), "
+                     f"{len(success_outputs)}/{total_runs} run(s) succeeded; "
+                     f"{pct:.0f}% of successful runs returned identical outputs "
+                     f"(most common: {modal})"),
+        )

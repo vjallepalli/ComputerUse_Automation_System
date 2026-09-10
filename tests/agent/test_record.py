@@ -79,6 +79,21 @@ def test_provenance_and_versions():
     assert cap.schema_version == "1.0"
 
 
+def test_recorder_always_emits_draft():
+    # Recording a capability once does NOT make it trusted for unattended
+    # replay. It must ship as a draft with no approval record every time --
+    # promotion is an explicit `python -m agent.approve`. Guard against a future
+    # schema-default change silently flipping this.
+    cap = record_capability(FIXTURE, **_OUTPUT_KW)
+    assert cap.status == "draft"
+    assert cap.approval is None
+
+    # ...through the CLI path and a JSON round-trip too
+    restored = Capability.model_validate_json(cap.model_dump_json())
+    assert restored.status == "draft"
+    assert restored.approval is None
+
+
 # --- refuses a run that did not succeed ---------------------------------
 
 

@@ -20,6 +20,7 @@ Every field has a description so the JSON is reviewable without reading code.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -145,6 +146,18 @@ class SuccessCondition(BaseModel):
     description: str = Field(description="Plain-language statement of what must be true.")
 
 
+class ApprovalRecord(BaseModel):
+    """Stamped onto a Capability when a human approves it for unattended replay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    approved_at: datetime = Field(description="UTC timestamp of the approval.")
+    note: Optional[str] = Field(
+        default=None,
+        description="Optional reviewer note -- why this capability was trusted.",
+    )
+
+
 class Capability(BaseModel):
     """A reusable, invokable capability recorded from one successful discovery run."""
 
@@ -162,6 +175,18 @@ class Capability(BaseModel):
         default=INITIAL_CAPABILITY_VERSION,
         pattern=_SEMVER,
         description="Capability semver. Starts at 0.1.0; bump when the artifact is edited.",
+    )
+    status: Literal["draft", "approved"] = Field(
+        default="draft",
+        description="Approval gate for UNATTENDED replay. A freshly recorded "
+        "capability is always 'draft' -- recording it once does not make it "
+        "trusted. `python -m agent.approve` flips it to 'approved'. Replaying a "
+        "draft escalates to a human first (the same pause/resume model as a "
+        "guardrail stop); an approved capability replays with no gate.",
+    )
+    approval: Optional[ApprovalRecord] = Field(
+        default=None,
+        description="Populated when `status` is 'approved'; None while 'draft'.",
     )
     name: str = Field(description="Short human-readable name.")
     description: str = Field(description="What the capability does and when to use it.")
@@ -190,6 +215,17 @@ class Capability(BaseModel):
     success_condition: SuccessCondition = Field(
         description="Final-page check that must hold for the invocation to be a success.",
     )
+
+    @model_validator(mode="after")
+    def _approval_matches_status(self) -> "Capability":
+        # The two fields are one fact expressed twice; keep them consistent so a
+        # hand-edited artifact can't claim 'approved' with no record, or carry a
+        # stale record while back in 'draft'.
+        if self.status == "approved" and self.approval is None:
+            raise ValueError("status is 'approved' but no approval record is present")
+        if self.status == "draft" and self.approval is not None:
+            raise ValueError("status is 'draft' but an approval record is present")
+        return self
 
     @model_validator(mode="after")
     def _names_are_unique(self) -> "Capability":

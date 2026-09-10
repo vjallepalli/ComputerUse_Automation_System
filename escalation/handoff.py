@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Optional
 
 from schema.escalation import EscalationRequest, HandoffResult
-from schema.guardrail import GuardrailDecision
+from schema.guardrail import GuardrailDecision, RiskTier
 from surface.dom import get_cleaned_dom, read_field_values
 
 REQUESTS_ROOT = Path("escalation/requests")
@@ -131,6 +131,85 @@ def request_escalation(
         else:
             note = "human approved the proposed action as-is (page untouched)"
         return _result("resume", changed, url_before, url_after, slug, note)
+
+
+def request_replay_approval(
+    capability,
+    *,
+    run_id: str,
+    out_root: Optional[Path] = None,
+    input_fn=input,
+) -> HandoffResult:
+    """Pre-replay approval gate for a DRAFT capability.
+
+    Same pause/resume model as `request_escalation` -- persist a request, print
+    why we stopped, block on `input()` for resume/reject -- adapted because
+    there is NO live page yet at this point in the flow. The `EscalationRequest`
+    shape is reused with these documented substitutions:
+
+      * step_number       = 0     -- pre-flight, before any UI action (matches
+                                     replay's "step 0 = parameter pre-flight")
+      * tier              = blocked -- a never-approved capability is not
+                                     auto-runnable, the same category a `blocked`
+                                     action falls in
+      * current_url       = None  -- no navigation has happened
+      * dom_snapshot_path = None  -- no page to snapshot (field is Optional)
+
+    resume -> the caller runs THIS replay only; the capability file is NOT
+              modified. Promotion to `status="approved"` is a separate,
+              deliberate step: `python -m agent.approve`.
+    reject -> the caller stops cleanly, exactly like a guardrail reject.
+
+    Bounded: EOF / exhausted input -> reject (via `_prompt`), never a silent loop.
+    """
+    now = datetime.now(timezone.utc)
+    slug = now.strftime("%Y%m%dT%H%M%S_%f") + "Z"
+    req_dir = (out_root or REQUESTS_ROOT) / run_id
+    req_dir.mkdir(parents=True, exist_ok=True)
+
+    reason = (
+        f"capability {capability.capability_id!r} has status 'draft' -- it has "
+        "never been approved for unattended replay. A human must clear this run, "
+        "or approve the capability first with `python -m agent.approve`."
+    )
+    request = EscalationRequest(
+        run_id=run_id,
+        capability_id_or_goal=capability.capability_id,
+        step_number=0,
+        tier=RiskTier.BLOCKED,
+        reason=reason,
+        current_url=None,
+        dom_snapshot_path=None,
+        screenshot_path=None,
+        timestamp=now.isoformat(),
+    )
+    req_path = req_dir / f"{slug}.json"
+    req_path.write_text(request.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    line = "=" * 64
+    print(
+        f"\n{line}\n"
+        f"REPLAY APPROVAL GATE -- human decision needed\n"
+        f"  run:            {run_id}\n"
+        f"  capability:     {capability.capability_id} v{capability.version} "
+        f"({capability.name})\n"
+        f"  status:         draft -- never approved for unattended replay\n"
+        f"  why stopped:    {reason}\n"
+        f"  saved:          {req_path}\n\n"
+        f"  type 'resume' to allow THIS replay run (the capability stays 'draft').\n"
+        f"  type 'reject' to stop.\n"
+        f"  to approve the capability permanently:\n"
+        f"      python -m agent.approve --capability <path>\n"
+        f"{line}"
+    )
+
+    answer = _prompt(input_fn)
+    note = (
+        "human allowed this replay run; capability left as draft (not promoted)"
+        if answer == "resume"
+        else "human rejected: draft capability not cleared for unattended replay"
+    )
+    return HandoffResult(action=answer, intervened=False, note=note)
 
 
 # --- internals --------------------------------------------------------------

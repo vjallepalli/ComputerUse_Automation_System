@@ -28,9 +28,11 @@ class EscalationRequest(BaseModel):
     tier: RiskTier = Field(description="Risk tier that triggered the pause.")
     reason: str = Field(description="The guardrail's reason string.")
     current_url: Optional[str] = Field(description="Page URL at the moment of the pause.")
-    dom_snapshot_path: str = Field(
+    dom_snapshot_path: Optional[str] = Field(
+        default=None,
         description="Path (relative to the request file) to the saved cleaned-DOM "
-        "snapshot of the live page at pause time. Not inlined.",
+        "snapshot of the live page at pause time. Not inlined. None for a "
+        "pre-replay approval gate, where there is no live page yet.",
     )
     screenshot_path: Optional[str] = Field(
         default=None,
