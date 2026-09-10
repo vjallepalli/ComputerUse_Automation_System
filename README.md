@@ -29,10 +29,7 @@ actually surfaced.
 The full thread the brief asks for — a goal, an LLM-driven run that completes it, a saved
 capability artifact, a deterministic replay with typed inputs/outputs and error handling, a human
 taking over the live session mid-run, and evidence from both a discovery and a replay run — is
-demonstrated end-to-end in `/evidence/`, not just described below.
-
-**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
-**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
+demonstrated end-to-end in `/evidence/`
 
 ## How it works
 
@@ -77,6 +74,9 @@ Two more things happen on either side of that, whenever they're needed — not o
 
 That's the whole shape: reason once, act carefully, replay cheaply — and know when to stop and
 ask a person instead of guessing.
+
+**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
+**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
 
 ## Requirements
 
