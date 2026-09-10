@@ -1,16 +1,75 @@
-# interface-ai
+# Computer-Use Automation System
 
-A computer-use system with two phases operating on a web UI that has no API:
+**An LLM figures out a legacy banking UI once. From then on, the job runs without it.**
 
-- **Discovery** — an LLM agent drives a real browser via Playwright toward a goal,
-  and distills a successful run into a versioned **Capability artifact**.
-- **Replay** — that artifact is executed **deterministically, no model in the loop**,
-  against the same action surface, returning `success` / `business_outcome` /
-  `failure`.
+I built this around a question the brief poses directly: banks and credit unions run a long tail
+of back-office software with no API — the only way in is the same UI a human operator uses. Paying
+a model to re-read and re-reason about that UI on every single invocation is slow, expensive, and
+non-deterministic in exactly the place production automation can't afford to be.
 
-See [CLAUDE.md](CLAUDE.md) for the architecture, conventions, and package layout.
-See [REPORT.md](REPORT.md) for the full design write-up (architecture, artifact
-schema, determinism & error handling, heterogeneity, escalation, safety, cuts).
+So the system works in two phases:
+
+- **Discovery** — an LLM agent drives a real browser (via Playwright) toward a natural-language
+  goal, reading the page, deciding an action, and acting — observe, decide, act, repeat. A
+  successful run gets distilled into a typed, versioned **Capability artifact**: not a transcript,
+  but a reusable contract (inputs, steps, outputs, a success condition).
+- **Replay** — that artifact runs again with **zero model calls**. New parameters in, a structured
+  result out: `success`, a known `business_outcome` (e.g. "member not found" — a real answer, not
+  a crash), or a debuggable `failure`.
+
+Two things I leaned on hard, because the target app is deliberately hostile (nested tables, no
+test IDs, no semantic labels): every action is checked against a **safety guardrail** before it
+runs — writes and sensitive-data fields are never auto-executed — and when the system genuinely
+can't proceed safely, it **hands the same live browser session to a human**, waits, and resumes
+once they're done. Both are demonstrated end-to-end with real evidence in `/evidence/`, not just
+built and left untested — see the honest limits in [`AUDIT.md`](AUDIT.md) for what that testing
+actually surfaced.
+
+See [REPORT.md](REPORT.md) for the full design write-up (architecture, artifact schema,
+determinism & error handling, heterogeneity, escalation, safety, cuts) and [`AUDIT.md`](AUDIT.md)
+for a section-by-section check against the brief, done before submission rather than left for a
+reviewer to find. [CLAUDE.md](CLAUDE.md) has the package-level conventions.
+
+## How it works
+
+From an end user's side, there are really only two moments that matter: **the first time** you
+ask for something new, and **every time after that**.
+
+```
+ FIRST TIME — Discovery                         EVERY TIME AFTER — Replay
+ ───────────────────────                        ──────────────────────────
+ "Look up member 10003's         ──┐             capability.json
+  savings balance"                 │             + member_number=10002
+                                    ▼                        │
+                        ┌──────────────────────┐             ▼
+                        │  observe  the page    │   ┌──────────────────────┐
+                        │  decide   what to do   │◄──│  same recorded steps │
+                        │  (LLM, one action/turn)│   │  re-run exactly       │
+                        │  act      on the browser│  │  NO model call        │
+                        └──────────┬───────────┘   └──────────┬───────────┘
+                                   │  repeats until               │
+                                   │  the goal is met              ▼
+                                   ▼                     success / business
+                        ┌──────────────────────┐         outcome / failure
+                        │ record the run as a   │         (typed, structured)
+                        │ typed, reusable        │
+                        │ Capability artifact    │
+                        └──────────────────────┘
+```
+
+Two more things happen on either side of that, whenever they're needed — not on every run:
+
+- **Before any risky or write action executes** (opening a sub-account, submitting a form,
+  touching a sensitive field like an SSN), the system checks it against a guardrail. If it's
+  outside what's allowed to run automatically, the run **pauses**, hands the same live browser
+  window to a person, and **waits** — it never guesses at data it can't see, and it never
+  silently proceeds past something it shouldn't.
+- **If replay hits something it doesn't recognize** — an unreachable app, a page that never
+  reaches its expected end state — it reports a clear, structured failure (what step, what was
+  expected, what was actually seen) instead of crashing or returning a wrong answer silently.
+
+That's the whole shape: reason once, act carefully, replay cheaply — and know when to stop and
+ask a person instead of guessing.
 
 ## Requirements
 
