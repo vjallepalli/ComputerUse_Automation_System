@@ -1,88 +1,202 @@
 # REPORT
 
+I'm going to explain this the way I'd explain it to someone standing next to me, not the way a
+spec sheet would. Where I use a technical term I'll say what it means in plain words first, and
+every decision below is one I can defend out loud — including the ones that turned out to be
+wrong on the first try.
+
+The short version of what I built: an AI reads an unfamiliar screen and figures out how to do a
+task on it, the same way a new employee would. Once it succeeds, I don't make it re-figure that
+out every time — I turn what it learned into a small, reusable recipe that runs on its own,
+instantly, without the AI involved at all. And when the recipe hits something it genuinely
+shouldn't handle alone — a risky action, or data it isn't allowed to see — it stops and hands the
+keyboard to a person, on the exact same screen, then takes it back once they're done.
+
 ## 1. Architecture
 
-The system is a Python + Playwright + Anthropic API stack, chosen for low setup friction and because Playwright's multiple locator strategies (role, label, text) are well suited to a UI with no test IDs. The target surface is an intentionally legacy-hostile Flask app (server-rendered, nested tables, no semantic markup) standing in for a real back-office banking screen.
+I split the system into two halves that do very different jobs: **discovery**, where the AI is
+actually thinking, and **replay**, where it isn't. Here's the shape of the whole thing:
 
-The system has two independent execution paths that share a perception/action layer:
+![System architecture: discovery loop, shared guardrail check, and replay](docs/architecture-diagram.svg)
 
-- **Discovery loop** (`agent/orchestrator.py`): observe → decide → guardrail-check → act → record, repeated until a `done` action or a stopping condition. "Decide" calls the Claude API with the current cleaned page state and a goal; every other step is deterministic code.
-- **Replay engine** (`replay/engine.py`): given a recorded Capability artifact and input parameters, re-runs the same step sequence with **no LLM call** — substituting parameters, executing via the same action/executor layer, checking a success condition, and extracting typed outputs.
+The two halves share two things on purpose, drawn above as shared boxes rather than separate
+copies: the **guardrail check** and the **browser itself**. If I'd written the safety check twice —
+once for discovery, once for replay — the two copies would eventually drift apart, and that's
+exactly the kind of gap a real bank couldn't accept. Sharing the actual browser session is what
+makes the human handoff real: a person takes over the exact page the AI was looking at, not a
+fresh, disconnected one.
 
-Both loops route every action through the same guardrail check before execution, and both use the same DOM-cleaning/perception code (`surface/dom.py`), so a fix or policy change (e.g. sensitive-data masking) can't silently diverge between the two paths.
+- **Discovery** is the "figure it out" phase. Given a goal, the AI looks at the current screen,
+  decides one small action — click this, type that — and does it, over and over, until the goal is
+  met. I built this with Claude and Playwright (a tool that drives a real Chrome browser): Claude
+  decides, Playwright acts.
+- **Replay** is the "just do it again" phase. Once discovery succeeds, I compress everything it
+  did into a typed, saved recipe (I call it a Capability — more on that in §2). Replay reads that
+  recipe and carries it out step by step, with **no AI call at all** — same steps, new input
+  values, instant, free, and predictable.
 
-**Key trade-off:** perception is text/DOM-based, not screenshot/vision-based. Given no test IDs and nested-table markup, a cleaned-HTML representation lets the model reason about concrete, locatable elements (label text, role, adjacent cells) that map directly to Playwright locators. Vision would need coordinate-based interaction, which is more brittle for this class of app and harder to make deterministic on replay. The cost is that purely visual cues (layout, color) are invisible to the agent — acceptable for this environment, and documented as a stretch item.
+**Why text, not screenshots.** I chose to have the AI read a cleaned-up version of the page's
+underlying markup, rather than look at a picture of the screen. The target application has no
+labeled buttons or IDs for anything — it's exactly the kind of messy, old-style interface real
+banking software actually has. Reading structure lets me point at a specific, nameable thing
+("the field labeled Member Number") that a script can click reliably later. A screenshot would
+tell the AI *where* something looks like a button, not *which* button it durably is — and that
+distinction is what makes replay trustworthy instead of fragile.
 
 ## 2. Artifact schema
 
-A recorded discovery run is first a raw, disposable transcript (`artifacts/runs/<id>/steps.jsonl` + DOM/screenshot sidecars) — useful for debugging, not the reusable product. A separate **Capability** (`schema/capability.py`) is compiled from a successful run and is the actual deliverable an AI agent would invoke:
+Here's the idea in one sentence: **a Capability is a recipe, not a recording.** The raw transcript
+of a discovery run is messy and one-time-use — it's full of the AI's back-and-forth, the exact
+numbers it happened to type, dead ends. A Capability is the cleaned-up, reusable version of that:
+what to do, what it needs from you, and what it gives back.
 
-- `parameters`: typed inputs (e.g. `member_number: int`), auto-detected by matching a typed value against the goal text at record time — if a typed value also appears in the goal, it's treated as a per-invocation input; if not, it's a fixed literal (e.g. clicking "Retrieve").
-- `steps`: ordered actions with their resolved locator strategy/value, and `value_template` supporting `{param}` substitution.
-- `outputs`: typed, named values with an explicit extraction locator (strategy + target) — e.g. a `next_cell` strategy that reads the value adjacent to a labeled table cell.
-- `success_condition`: a locator that must resolve on the final page for the run to count as successful.
-- `version` / `created_from_run`: versioned and traceable back to the discovery run it came from, without embedding the raw transcript.
+Concretely, every Capability has:
 
-**Deliberate design choice:** output extraction targets are **not** auto-inferred from the model's freeform "done" reasoning — they are supplied explicitly by a human reviewer at record time (`--output-strategy`/`--output-target`). Guessing "which number is the answer" from natural language is unreliable; the brief asks for a reviewable artifact, so the recorder proposes structure and a human confirms what the capability actually returns. This was validated in practice: an early auto-derived extraction target was wrong (it returned the field label instead of the value), caught only by manually inspecting the artifact before trusting it.
+- **Inputs** — the values you supply each time, typed (e.g. `member_number: int`). I detect these
+  automatically: if a value the AI typed also shows up in the original goal text, I treat it as an
+  input rather than baking it in as a fixed literal.
+- **Steps** — the ordered actions, each pointing at an element by a durable strategy (its label,
+  its role, its visible text) rather than a brittle click coordinate.
+- **Outputs** — the typed values the capability hands back (e.g. `savings_balance: float`), with
+  an exact instruction for where to read them from the final page.
+- **A success condition** — one check that must hold true for the run to count as successful.
+
+The one decision here I'd defend hardest: **I don't let the AI decide what counts as the output.**
+Early on, I let it — the AI's own explanation of what it found sounded confident and specific, but
+when I actually checked the saved recipe, it had captured the wrong thing (a label, not the number
+next to it). So I changed it: a person looks at one successful run and points at exactly where the
+answer lives, once, and that becomes locked into the recipe. The AI can find its way around a
+screen far better than it can be trusted to say precisely what a screen's answer is.
 
 ## 3. Determinism & error handling
 
-Replay never calls an LLM. It re-syncs the same structural label-synthesis used in discovery (adding `aria-label`s for unlabeled inputs, derived from adjacent cell text) before each step, so the same locator strategies resolve identically without any model reasoning involved.
+"Deterministic" just means: given the same recipe and the same inputs, replay does the exact same
+thing every time, with zero randomness and zero AI involvement. I made that a structural guarantee,
+not a promise — replay's code literally never imports or calls the AI at all, so there's no path by
+which it could sneak in.
 
-The result contract (`schema/replay.py`) distinguishes three outcomes, matching the brief's taxonomy:
+When something goes wrong during replay, I sort it into one of three honest buckets, because
+lumping them together is how automation either cries wolf constantly or hides real problems:
 
-- **`success`** — success condition held, outputs extracted.
-- **`business_outcome`** — a known, expected divergence (e.g. a restricted member), detected via a small configurable table of page-text signatures checked after each step, before extraction is attempted. Not a crash.
-- **`failure`** — a hard stop with `step_number`, what was expected, and what was observed, for debugging.
+1. **A real answer, just not the one you hoped for.** "This member doesn't exist" or "this account
+   is restricted" isn't a bug — it's information the caller needs. I return it as a clean, named
+   result, not an error.
+2. **A hiccup, handled quietly.** If a screen is briefly slow to load, I retry once before giving
+   up — enough to smooth over a real-world blip without hiding a genuine problem behind endless
+   retries.
+3. **A real failure**, reported with exactly what step it was on, what it expected to find, and
+   what it actually saw — so anyone debugging it doesn't have to guess.
 
-Transient conditions (a selector that doesn't resolve, a timeout) are retried once after a short wait before being treated as a hard failure — covering the brief's "transient slowness" case without masking real problems behind infinite retries.
+I want to be honest about how a couple of these got found: not by me thinking hard about edge
+cases in advance, but by actually running the thing and watching it break. Two examples worth
+naming, because they changed real code:
 
-Both discovery and replay were validated against a real business-outcome case (a restricted member) and a real success case with correct output extraction, confirmed by inspecting the actual evidence, not just a green test suite.
+- Two automated runs started in the same second used to silently overwrite each other's saved
+  results — I only caught this by deliberately firing several runs back-to-back and noticing one
+  had vanished.
+- The keyword check that decides "is this text sensitive/risky" originally just lowercased the
+  text and compared it — which meant a sneaky variant using full-width or invisible characters
+  could slip past it entirely. I found this by trying to break my own check on purpose.
+
+Both are fixed now, with a test that pins the fix in place so they can't silently come back.
 
 ## 4. Heterogeneity & multi-tenant
 
-Only one concrete surface (a legacy server-rendered web app) is implemented, but the design has a seam intended to generalize:
+The brief's real-world picture is hundreds of banks, each running around twenty apps, many of them
+the *same underlying software* just re-skinned and re-labeled. I only built against one app, but I
+designed with that picture in mind, not just the one screen in front of me.
 
-- **Perception/action vs. recorded flow are separate.** `surface/dom.py` and `surface/executor.py` are the only code that knows about Playwright/DOM specifics. The Capability schema itself only knows about abstract locator strategies (`label`, `role_text`, `text_contains`, `next_cell`) and typed parameters/outputs — nothing DOM-specific leaks into the artifact. Extending to a desktop app or an accessibility-tree-based surface would mean writing a new `surface` implementation that satisfies the same `get_cleaned_dom` / `execute_on_page` contract, without touching the schema, recorder, or replay engine.
-- **Multi-tenant reuse:** since a Capability's steps target elements by role/label/text rather than raw CSS/XPath, and many tenants run the same underlying vendor product with different branding, a capability recorded against one tenant's instance has a reasonable chance of resolving correctly against another tenant's instance of the same product, as long as labels/roles are stable even if visual styling differs. Where they diverge (a genuinely different field label), the artifact's locators would fail to resolve — which replay already surfaces as a clear `failure`, not a silent wrong action. A production version would version-pin a capability per vendor-product-version and detect drift by tracking a rising failure rate for a given capability against a given tenant, flagging it for re-recording rather than continuing to fail silently.
-- **Not implemented / explicitly deferred:** per-tenant override/specialization of a shared capability, and any desktop or accessibility-tree surface implementation. Both are architecturally accommodated (the seam exists) but not built, given the time budget.
+The key idea: **the recipe never knows it's talking to a browser.** Everything that actually knows
+about web pages — reading the screen, clicking things — lives in one small, isolated part of the
+code. The Capability itself only ever says things like "click the thing labeled Retrieve," never
+"click this exact pixel" or "run this exact bit of website code." That separation means teaching
+the system a brand-new kind of interface later (a desktop app, for instance) is a matter of writing
+one new small adapter — the recipes themselves, and everything that reads them, wouldn't need to
+change at all.
+
+For reuse across similar-but-different bank branding: because a recipe finds things by label and
+role rather than exact appearance, it has a real shot at working unmodified on a re-skinned version
+of the same underlying software. Where it genuinely can't find something, replay reports a clear,
+specific failure rather than clicking the wrong thing by mistake — which is exactly the signal a
+team would need to notice a recipe has gone stale and needs a quick re-recording, before it costs
+anyone anything.
 
 ## 5. Escalation & handoff
 
-Two related but distinct human-in-the-loop paths exist:
+Some things, I don't think an AI should ever just do on its own — submitting a form that opens a
+real account, or typing in someone's social security number. For those, the system doesn't guess
+and it doesn't push forward quietly. It **stops**, explains exactly what it wanted to do and why it
+stopped, and hands the same already-open browser window to a person.
 
-- **Risky-action escalation:** a lightweight keyword heuristic (`guardrail/policy.py`) classifies actions into `safe` / `confirm` / `blocked` tiers (e.g. a click on "Process" or "Submit" is `confirm`; a destructive-sounding action is unconditionally `blocked`). Anything above the configured `AGENT_MAX_AUTO_RISK_TIER` pauses the loop before `execute_on_page` is reached.
-- **Sensitive-data escalation:** any `type` action targeting a field whose label matches a sensitive-data keyword list (SSN, tax ID, passphrase, PIN) is unconditionally `blocked`, regardless of configured tier, because the agent's proposed value for such a field cannot be trusted — see Safety below.
+That last detail — *the same* window, not a fresh one — mattered enough that I built around it
+specifically. A person can literally see and click around in the exact page the automation was
+looking at, do the sensitive bit by hand if needed, and then tell the system to continue. The
+system picks the story back up from wherever the screen actually is, rather than blindly repeating
+whatever it originally planned to do — which matters, because by the time a person's done, the
+right next step might genuinely be different from what was proposed a moment ago.
 
-On a stop, the system writes a structured `EscalationRequest` (goal/capability, step, reason, tier, a DOM/screenshot reference) and blocks on terminal input, while the **same live browser session** (already open, not a fresh one) is left available for the human to act on directly. Two human intents are distinguished on resume:
-
-- The human **approves the proposed action as-is** (browser untouched) → the agent executes it.
-- The human **performs the step manually** in the browser (detected via URL and live field-value comparison) → the agent's proposed action is skipped, and the loop re-observes from the resulting state rather than replaying a now-stale decision.
-
-For a sensitive field specifically, only the second path is permitted — a bare "approve" is refused and re-prompted, because the agent's proposed value is necessarily fabricated (it never saw the real value) and executing it would silently write wrong data.
-
-This was validated with a real run: the agent correctly stopped before submitting a new sub-account, a human typed the real verification value directly into the browser, and the run resumed and completed correctly — with the human's action, not its content, recorded in the evidence log.
-
-**Mocked, per the brief's scope note:** the "operator console" is the same terminal plus the already-open browser window, not a separate web UI. The pause/resume/reject control-transfer mechanism itself is real; only the interface a human uses to see/act on it is minimal.
+I tested this for real, more than once, including the case that worried me most: a field asking to
+re-enter a member's SSN for verification. The system refuses to guess at that value — it can't see
+it, so it won't fabricate something plausible-looking and type it in. It waits for a person to type
+the real value directly into the browser, notices that the page actually changed, and only then
+continues. I caught and fixed a real bug in exactly this flow, where the log used to still show the
+AI's *made-up* guess even though a human had overridden it — now it correctly shows nothing at all,
+because the AI never actually knew the real value in the first place.
 
 ## 6. Safety
 
-- **Allowlist:** actions are restricted to the capability's/run's configured `target_app` origin; anything outside it is a hard block, independent of risk tier.
-- **Risk tiers:** `safe` (auto-executed) / `confirm` (escalates above the configured ceiling) / `blocked` (never auto-executed regardless of configuration — a hard floor, not just a default).
-- **Sensitive data is masked before it reaches the model, not only before logging.** This was a real finding during development: initial redaction only scrubbed step *logs*, but the underlying value was still being sent to the Claude API as part of ordinary page-reading context. The fix masks matching values (by label adjacency and by SSN-shape pattern) inside the DOM-cleaning step itself, so the model never receives the raw value in the first place — a stronger guarantee than log-time redaction alone. A related regression (masking an *empty* sensitive field, making it look pre-filled and causing the agent to skip it) was caught and fixed during testing.
-- **Manual-intervention logging** was corrected to omit the value entirely (not merely redact it) for steps a human completed off-screen from the agent's perspective — since restating even a redaction marker implied the agent had "typed" something it never actually saw.
+A few rules the system never bends on:
 
-**Known limits:** the risk-tier classifier is a keyword heuristic, not a real classifier — it can both over- and under-flag actions whose text doesn't match the configured keyword lists. A production version should let risk tier be reviewed and set explicitly per `CapabilityStep` at record time, the same review philosophy already used for output extraction. Output-side redaction (whether a capability's declared outputs could themselves leak sensitive data) was not audited. Replay's result JSON currently writes input `params` unredacted — flagged, not fixed, given time constraints.
+- It can only ever act inside the one application it's configured for — nothing else, no
+  exceptions, checked before every single action.
+- Every action gets sorted into "fine to do automatically," "needs a yes from a person first," or
+  "never automatic, full stop" — and that last category really does mean never, regardless of any
+  setting.
+- Sensitive-looking data (an SSN, a password) never reaches the AI in the first place. I mask it
+  before the AI ever sees the page — not just afterward in the saved logs — because the real risk
+  isn't just "did we write this down somewhere," it's "did we ever hand this to a third party at
+  all."
+
+A couple of honest, hard-won additions to that last point. First: the masking almost broke the
+system in a subtler way than I expected — if an *empty* sensitive field got masked the same way a
+*filled* one would, the AI reasonably assumed the field was already done and skipped it entirely.
+I only found that by watching a real run skip a required field. Second: a later, deliberately
+adversarial round of testing found that the keyword check behind both the safety rules and the
+data-masking could be quietly defeated with unusual Unicode characters — the kind a person wouldn't
+type by accident, but a system probing for weaknesses would try. Both are fixed, both are covered
+by a test now, and I'd rather say so plainly than let a reviewer find either one first.
+
+**Where I know this still falls short:** the "is this risky" check is a keyword list, not real
+judgment — it will occasionally miss something it should catch, or flag something harmless. A
+proper version would have each recipe's risk level reviewed and signed off by a person once, the
+same way I already require for what a recipe reports back as its answer (§2). I'm also aware the
+final saved replay result still writes out its raw input values without masking — a real gap I'm
+naming rather than hiding.
 
 ## 7. Cuts
 
-Deliberately deferred, given the time budget:
+Being upfront about what I deliberately left out, and why, matters more to me than pretending this
+is finished:
 
-- Parameterization heuristic is a simple substring match against the goal text — no support for parameters not literally present in the goal string.
-- Only one target-app flow pair was exercised end-to-end for replay (read-only lookup) plus one live discovery-and-escalation run (a write flow); replay was not re-tested against the write flow's recorded artifact.
-- Multi-tenant override/specialization and a second (desktop or accessibility-tree) surface implementation: architecturally accommodated, not built.
-- Risk classification is keyword-based, not reviewed/authored per capability.
-- Output-value redaction and replay's `params` redaction in result JSON.
-- Member-number type inference (string → int) would silently lose leading zeros on real member IDs shaped that way — not handled.
+- The system currently only recognizes an input value as reusable if it literally appears, word
+  for word, in the goal you typed. A more flexible version wouldn't need that.
+- I only ran replay end-to-end against the simple, read-only flow (looking up a balance) — the
+  more complex write flow (opening a new account) was proven live through discovery and the human
+  handoff, but I didn't also record and replay it as its own recipe.
+- Support for a second kind of application (a desktop program, say) and for tenant-specific
+  overrides is designed for, in the sense that nothing in the architecture would block it — but
+  neither is actually built.
+- The "is this risky" check is a keyword list a person hasn't reviewed yet, not a vetted judgment.
+- A couple of specific things stay unmasked today that probably shouldn't in a real deployment: a
+  capability's own declared answers, and the raw inputs written into a replay's saved result.
+- If a real member number legitimately started with a zero, my current handling would quietly
+  drop it — I never handled that case.
+- I looked for a case where the system should refuse to act because it's talking to the wrong
+  website entirely — I built and tested that check, but couldn't actually trigger it for real
+  against this particular demo app, since every link inside it stays on the same site by
+  construction.
 
-**What we'd build next with more time:** a human-reviewed risk tier stored directly in the Capability schema (closing the biggest safety gap honestly disclosed above), a second surface implementation to prove the abstraction seam, and end-to-end replay evidence for the write (sub-account) flow to match the read flow's coverage.
+If I had more time, the first thing I'd build is a way for a person to review and sign off on a
+recipe's risk level once, up front — the same trust model I already use for what a recipe reports
+back. After that: a second kind of interface, to prove the design actually holds up outside a
+browser, and a recorded, replayable version of the write flow to match the read flow's coverage.
