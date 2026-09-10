@@ -106,3 +106,113 @@ class ReplayResult(BaseModel):
             status="failure", capability_id=capability.capability_id,
             version=capability.version, params=dict(params), failure=detail,
         )
+
+
+# --- multi-run stability (brief section 8 stretch goal) -------------------
+#
+# A thin aggregate over N repeated `replay_capability` calls with the SAME
+# capability + params. It does not change replay -- it only asks "did N
+# identical invocations produce identical results?". The headline signal is
+# `all_outputs_identical`: if replay is deterministic (the whole point of the
+# phase) every successful run must extract byte-identical outputs.
+
+
+class DurationStats(BaseModel):
+    """Wall-clock spread of the N runs, in seconds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min: float
+    max: float
+    mean: float
+
+
+class RunSummary(BaseModel):
+    """One run in the batch, condensed for a human skimming the report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run: int = Field(description="1-based index in the batch.")
+    status: Literal["success", "business_outcome", "failure"]
+    key_output: Optional[str] = Field(
+        default=None,
+        description="The salient value for a skim: 'name=value[, ...]' for "
+        "success, the business-outcome code, or 'step N: message' for failure.",
+    )
+    duration_seconds: float
+
+
+class StabilityReport(BaseModel):
+    """Aggregate of N replays of one capability with one set of params."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capability_id: str
+    version: str
+    params: dict[str, Any]
+    total_runs: int
+    status_counts: dict[str, int] = Field(
+        description="Count per status. Always carries all three keys "
+        "(success / business_outcome / failure), zero-filled.",
+    )
+    successful_runs: int = Field(
+        description="Runs with status=success -- the population "
+        "`all_outputs_identical` is computed over.",
+    )
+    all_outputs_identical: bool = Field(
+        description="True iff every status=success run extracted exactly the "
+        "same `outputs`. Vacuously True with 0 or 1 successful runs. False here "
+        "is a REAL finding: replay is supposed to be deterministic.",
+    )
+    duration_seconds: DurationStats
+    per_run: list[RunSummary]
+
+    @classmethod
+    def from_runs(cls, capability, params: dict,
+                  runs: list[tuple["ReplayResult", float]]) -> "StabilityReport":
+        """Build the report from `(result, duration_seconds)` pairs, in run order."""
+        if not runs:
+            raise ValueError("a stability report needs at least one run")
+
+        results = [r for r, _ in runs]
+        durations = [d for _, d in runs]
+
+        status_counts = {"success": 0, "business_outcome": 0, "failure": 0}
+        for r in results:
+            status_counts[r.status] = status_counts.get(r.status, 0) + 1
+
+        success_outputs = [r.outputs for r in results if r.status == "success"]
+        all_identical = all(o == success_outputs[0] for o in success_outputs)
+
+        per_run = [
+            RunSummary(run=i, status=r.status, key_output=_key_output(r),
+                       duration_seconds=round(d, 4))
+            for i, (r, d) in enumerate(runs, start=1)
+        ]
+
+        return cls(
+            capability_id=capability.capability_id,
+            version=capability.version,
+            params=dict(params),
+            total_runs=len(runs),
+            status_counts=status_counts,
+            successful_runs=status_counts["success"],
+            all_outputs_identical=all_identical,
+            duration_seconds=DurationStats(
+                min=round(min(durations), 4),
+                max=round(max(durations), 4),
+                mean=round(sum(durations) / len(durations), 4),
+            ),
+            per_run=per_run,
+        )
+
+
+def _key_output(result: "ReplayResult") -> Optional[str]:
+    if result.status == "success":
+        items = (result.outputs or {}).items()
+        return ", ".join(f"{k}={v!r}" for k, v in items) or None
+    if result.status == "business_outcome" and result.business_outcome is not None:
+        return result.business_outcome.code
+    if result.status == "failure" and result.failure is not None:
+        return f"step {result.failure.step_number}: {result.failure.message}"
+    return None

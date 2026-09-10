@@ -9,6 +9,14 @@ step-by-step log to evidence/runs/<run-id>/ (the evidence path from CLAUDE.md's
 table -- gitignored). Exit 0 for success or business_outcome (both are
 legitimate results), 1 for failure or a params mismatch.
 
+`--repeat N` (brief section 8 stretch goal): replay the SAME capability + params
+N times, then write a StabilityReport (schema/replay.py) to
+evidence/runs/<batch-id>/stability_report.json alongside the per-run dirs
+(run-01/, run-02/, ...). The headline signal is whether every successful run
+extracted byte-identical outputs -- replay is meant to be deterministic. Exit 1
+if any run failed OR the outputs were not all identical. Default N=1 is the
+existing single-run behaviour, unchanged, and writes no stability report.
+
 `replay_capability` guarantees "any escaped exception -> ReplayResult(failure)",
 but that only covers the engine. CLI-level SETUP -- browser launch, initial
 navigation, sign-on -- runs before the engine is called, so main() adds an OUTER
@@ -22,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -31,7 +40,7 @@ from guardrail.policy import resolve_max_auto_tier
 from replay.engine import DEFAULT_RETRY_WAIT_S, default_run_id, replay_capability
 from schema.capability import Capability
 from schema.guardrail import RiskTier
-from schema.replay import FailureDetail, ReplayResult
+from schema.replay import FailureDetail, ReplayResult, StabilityReport
 
 
 def main(argv=None) -> int:
@@ -49,7 +58,13 @@ def main(argv=None) -> int:
                         help="seconds to wait before the single per-step retry")
     parser.add_argument("--max-auto-tier", choices=[t.value for t in RiskTier], default=None,
                         help="highest risk tier to auto-execute; default $AGENT_MAX_AUTO_RISK_TIER")
+    parser.add_argument("--repeat", type=int, default=1, metavar="N",
+                        help="replay N times and write a stability report (default 1)")
     args = parser.parse_args(argv)
+
+    if args.repeat < 1:
+        print(f"--repeat must be >= 1, got {args.repeat}", file=sys.stderr)
+        return 1
 
     max_auto_tier = RiskTier(args.max_auto_tier) if args.max_auto_tier else resolve_max_auto_tier()
 
@@ -80,6 +95,42 @@ def main(argv=None) -> int:
     print(f"replay {capability.capability_id} v{capability.version}  "
           f"(max auto risk tier = {max_auto_tier.value})")
 
+    # --- single run: unchanged behaviour, no stability report -------------
+    if args.repeat == 1:
+        result = _replay_once(capability, params, headed=args.headed,
+                              retry_wait=args.retry_wait, max_auto_tier=max_auto_tier,
+                              run_id=run_id, run_dir=run_dir)
+        _print(result, run_dir)
+        return 0 if result.status in ("success", "business_outcome") else 1
+
+    # --- multi-run stability: N identical invocations --------------------
+    print(f"stability: replaying {args.repeat}x with the same params {params}\n")
+    runs: list[tuple[ReplayResult, float]] = []
+    for i in range(1, args.repeat + 1):
+        sub_dir = run_dir / f"run-{i:02d}"
+        started = time.perf_counter()
+        result = _replay_once(capability, params, headed=args.headed,
+                              retry_wait=args.retry_wait, max_auto_tier=max_auto_tier,
+                              run_id=f"{run_id}-{i:02d}", run_dir=sub_dir)
+        elapsed = time.perf_counter() - started
+        runs.append((result, elapsed))
+        print(f"  run {i}/{args.repeat}: {_one_line(result)}  ({elapsed:.2f}s)")
+
+    report = StabilityReport.from_runs(capability, params, runs)
+    (run_dir / "stability_report.json").write_text(
+        report.model_dump_json(indent=2) + "\n", encoding="utf-8"
+    )
+    _print_stability(report, run_dir)
+    ok = report.status_counts["failure"] == 0 and report.all_outputs_identical
+    return 0 if ok else 1
+
+
+def _replay_once(capability, params: dict, *, headed: bool, retry_wait: float,
+                 max_auto_tier, run_id: str, run_dir: Path) -> ReplayResult:
+    """One full replay against a fresh browser. Writes result.json + steps.jsonl
+    (+ error.txt on a CLI-setup failure) into `run_dir`. Never raises -- always
+    returns a ReplayResult, exactly as the single-run path always has."""
+    run_dir.mkdir(parents=True, exist_ok=True)
     step_log: list[dict] = []
     result: ReplayResult
     from playwright.sync_api import sync_playwright
@@ -88,13 +139,13 @@ def main(argv=None) -> int:
         with sync_playwright() as pw:
             browser = context = None
             try:
-                browser = pw.chromium.launch(headless=not args.headed)
+                browser = pw.chromium.launch(headless=not headed)
                 context = browser.new_context()
                 page = context.new_page()
                 _sign_on_if_needed(page, capability.target_app)
                 result = replay_capability(
                     capability, params, page,
-                    retry_wait=args.retry_wait, on_step=step_log.append,
+                    retry_wait=retry_wait, on_step=step_log.append,
                     max_auto_tier=max_auto_tier, run_id=run_id,
                 )
             finally:
@@ -132,9 +183,41 @@ def main(argv=None) -> int:
     with (run_dir / "steps.jsonl").open("w", encoding="utf-8") as fh:
         for record in step_log:
             fh.write(json.dumps(record) + "\n")
+    return result
 
-    _print(result, run_dir)
-    return 0 if result.status in ("success", "business_outcome") else 1
+
+def _one_line(result: ReplayResult) -> str:
+    """A single terminal line for one run in a --repeat batch."""
+    if result.status == "success":
+        outs = ", ".join(f"{k}={v!r}" for k, v in (result.outputs or {}).items())
+        return f"success       {outs}" if outs else "success       (no outputs)"
+    if result.status == "business_outcome":
+        return f"business      {result.business_outcome.code}"
+    f = result.failure
+    return f"FAILURE       step {f.step_number}: {_short(f.message, 120)}"
+
+
+def _print_stability(report: StabilityReport, run_dir: Path) -> None:
+    counts = report.status_counts
+    d = report.duration_seconds
+    print("\n" + "-" * 60)
+    print(f"stability report  ({report.total_runs} runs of "
+          f"{report.capability_id} v{report.version})")
+    print(f"  status:    success={counts['success']}  "
+          f"business_outcome={counts['business_outcome']}  failure={counts['failure']}")
+    if report.successful_runs >= 2:
+        verdict = "IDENTICAL" if report.all_outputs_identical else "*** DIVERGED ***"
+        print(f"  outputs:   {verdict} across {report.successful_runs} successful runs")
+    elif report.successful_runs == 1:
+        print("  outputs:   only 1 successful run -- nothing to compare")
+    else:
+        print("  outputs:   no successful runs")
+    print(f"  duration:  min {d.min:.2f}s  mean {d.mean:.2f}s  max {d.max:.2f}s")
+    if not report.all_outputs_identical:
+        print("  !! successful runs did not all extract the same outputs -- "
+              "replay is not deterministic here")
+    print(f"  report:    {run_dir / 'stability_report.json'}")
+    print("-" * 60)
 
 
 def _short(text: str, limit: int = 300) -> str:
