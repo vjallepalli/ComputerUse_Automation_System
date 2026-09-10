@@ -55,6 +55,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -425,7 +426,12 @@ def main(argv=None) -> int:
 
     base = os.environ.get("TARGET_APP_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     start_url = args.start_url or f"{base}/member"
-    run_id = args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Microseconds + a short random token so two runs started in the same
+    # wall-clock second cannot share a run dir and overwrite each other's
+    # transcript (a bare %S stamp could).
+    run_id = args.run_id or (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ") + f"_{secrets.token_hex(3)}"
+    )
     run_dir = Path("artifacts") / "runs" / run_id
 
     return run_discovery(

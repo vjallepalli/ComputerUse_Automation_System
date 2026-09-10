@@ -174,7 +174,15 @@ class Capability(BaseModel):
         description="Typed inputs the caller supplies at invocation time.",
     )
     steps: list[CapabilityStep] = Field(
-        description="Ordered UI actions replay performs, model-free.",
+        # JUDGMENT CALL (adversarial pass): the recorder already refuses a run
+        # with no type/click steps ("run has no type/click steps to record"), so
+        # a zero-step capability can only come from a hand-edited file. Replaying
+        # one would silently skip straight to the success_condition check against
+        # the landing page -- a meaningless "pass". Enforce the same invariant
+        # the recorder does, at the artifact boundary. Regression:
+        # tests/schema/test_capability_edge.py.
+        min_length=1,
+        description="Ordered UI actions replay performs, model-free. At least one.",
     )
     outputs: list[OutputSpec] = Field(
         description="Typed values the capability returns to the caller.",
@@ -182,6 +190,19 @@ class Capability(BaseModel):
     success_condition: SuccessCondition = Field(
         description="Final-page check that must hold for the invocation to be a success.",
     )
+
+    @model_validator(mode="after")
+    def _names_are_unique(self) -> "Capability":
+        # `parameters` / `outputs` are lists, but every downstream consumer keys
+        # them by name (replay's _validate_params builds `{p.name: p.type}`,
+        # _extract_all builds `outputs[spec.name]`). A duplicate name is a
+        # silently-collapsing ambiguity -- reject it at the artifact boundary.
+        for field_name, items in (("parameter", self.parameters), ("output", self.outputs)):
+            names = [i.name for i in items]
+            dupes = sorted({n for n in names if names.count(n) > 1})
+            if dupes:
+                raise ValueError(f"duplicate {field_name} name(s): {dupes}")
+        return self
 
     @model_validator(mode="after")
     def _referenced_params_are_declared(self) -> "Capability":

@@ -1,0 +1,9 @@
+replay lookup-savings-balance v0.1.0  (max auto risk tier = safe)
+status:     failure
+capability: lookup-savings-balance v0.1.0
+params:     {'member_number': '10003'}
+failure at step 1
+  expected: type '10003' into label='Member number'
+  observed: label='Member number' resolved to 0 elements; need exactly 1
+  message:  step 1 still failing after one retry
+evidence:   evidence/adversarial-testing/B1b_allowlist_violation/run/

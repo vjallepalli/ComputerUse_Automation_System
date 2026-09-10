@@ -108,6 +108,21 @@ def record_capability(
         text = decision.get("text", "")
         if text and text in goal:
             pname = _parameter_name(target, fallback_index=len(parameters) + 1)
+            existing = parameters.get(pname)
+            if existing is not None and existing.example != text:
+                # Two `type` steps derive the SAME parameter name (their targets
+                # snake_case to the same identifier) but recorded DIFFERENT
+                # values. `setdefault` would keep the first and silently bind the
+                # later step to it, dropping a distinct input. Refuse rather than
+                # emit a capability that cannot reproduce the run; a human can
+                # rename a field or hand-edit the artifact. Regression:
+                # tests/agent/test_record_edge.py.
+                raise RecorderError(
+                    f"step {raw.get('step')}: parameter name {pname!r} already "
+                    f"bound to {existing.example!r} but this step typed {text!r} "
+                    f"-- two different inputs collapse to one name; disambiguate "
+                    f"the field labels or record this value as a literal"
+                )
             parameters.setdefault(pname, Parameter(
                 name=pname,
                 type=_infer_type(text),

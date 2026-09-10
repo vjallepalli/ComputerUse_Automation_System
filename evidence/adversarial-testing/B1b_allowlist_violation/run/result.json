@@ -1,0 +1,16 @@
+{
+  "status": "failure",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "10003"
+  },
+  "outputs": null,
+  "business_outcome": null,
+  "failure": {
+    "step_number": 1,
+    "expected": "type '10003' into label='Member number'",
+    "observed": "label='Member number' resolved to 0 elements; need exactly 1",
+    "message": "step 1 still failing after one retry"
+  }
+}

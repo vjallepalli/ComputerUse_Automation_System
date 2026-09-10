@@ -73,8 +73,14 @@ from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Comment, NavigableString
 
-# ONE shared sensitive keyword list + SSN pattern (guardrail.policy owns them).
-from guardrail.policy import SENSITIVE_FIELD_KEYWORDS, SSN_SHAPE_RE
+# ONE shared sensitive keyword list + SSN pattern (guardrail.policy owns them),
+# plus the shared Unicode fold so "S​SN" / fullwidth "ＳＳＮ" labels still
+# mask (guardrail's keyword checks use the same fold).
+from guardrail.policy import (
+    SENSITIVE_FIELD_KEYWORDS,
+    SSN_SHAPE_RE,
+    normalize_for_keywords,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -259,7 +265,7 @@ def _set_field_value(el, value: str) -> None:
 
 
 def _is_sensitive_text(text: str) -> bool:
-    lowered = (text or "").lower()
+    lowered = normalize_for_keywords(text)
     return any(kw in lowered for kw in SENSITIVE_FIELD_KEYWORDS)
 
 

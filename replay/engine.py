@@ -25,6 +25,7 @@ against the shared allowlist + risk tier here before execute_on_page -- a
 from __future__ import annotations
 
 import re
+import secrets
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -47,6 +48,18 @@ except Exception:  # pragma: no cover
 DEFAULT_RETRY_WAIT_S = 0.5
 _RETRYABLE = (SelectorResolutionError, PlaywrightTimeoutError)
 _TEMPLATE_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def default_run_id(prefix: str = "") -> str:
+    """A run id that will not collide with a back-to-back run.
+
+    A bare second-granularity UTC stamp (the old default) means two replays
+    started in the same wall-clock second share a run dir and silently
+    overwrite each other's result.json / steps.jsonl. Microseconds + a short
+    random token make that practically impossible even across processes.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    return f"{prefix}{stamp}_{secrets.token_hex(3)}"
 
 
 @dataclass(frozen=True)
@@ -99,7 +112,17 @@ def replay_capability(
     if max_auto_tier is None:
         max_auto_tier = resolve_max_auto_tier()
     if run_id is None:
-        run_id = "replay-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_id = default_run_id("replay-")
+    if not isinstance(params, dict):
+        # A non-dict `params` (e.g. a JSON list) would otherwise blow up deep in
+        # the engine with a cryptic "dictionary update sequence" error. Turn it
+        # into the same clean pre-flight failure a bad param name gets.
+        return ReplayResult.failed(capability, {}, FailureDetail(
+            step_number=0,
+            expected="a params mapping of declared parameter names to values",
+            observed=f"got {type(params).__name__}",
+            message="params must be a dict; nothing was executed",
+        ))
     try:
         return _replay(capability, params, page, retry_wait, on_step,
                        max_auto_tier, run_id)

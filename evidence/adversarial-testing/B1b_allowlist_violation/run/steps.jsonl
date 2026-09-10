@@ -1,0 +1,2 @@
+{"step_number": 1, "guardrail": {"allowed_automatically": true, "tier": "safe", "reason": "type into a non-sensitive field -> safe; within max auto tier (safe) -> auto", "allowlist_violation": false}}
+{"step_number": 1, "action": "type", "target": {"strategy": "label", "value": "Member number"}, "value": "10003", "attempts": 2, "status": "failed", "error": "label='Member number' resolved to 0 elements; need exactly 1"}

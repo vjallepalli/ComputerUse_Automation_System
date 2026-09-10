@@ -1,0 +1,16 @@
+{
+  "status": "failure",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "not_a_number"
+  },
+  "outputs": null,
+  "business_outcome": null,
+  "failure": {
+    "step_number": 0,
+    "expected": "parameter 'member_number' is a int",
+    "observed": "member_number='not_a_number' (str)",
+    "message": "parameter 'member_number' is not a valid int"
+  }
+}

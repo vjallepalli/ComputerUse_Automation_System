@@ -1,0 +1,5 @@
+{"step_number": 1, "guardrail": {"allowed_automatically": true, "tier": "safe", "reason": "type into a non-sensitive field -> safe; within max auto tier (safe) -> auto", "allowlist_violation": false}}
+{"step_number": 1, "action": "type", "target": {"strategy": "label", "value": "Member number"}, "value": "10002", "attempts": 1, "status": "ok", "error": null}
+{"step_number": 2, "guardrail": {"allowed_automatically": true, "tier": "safe", "reason": "click text matches no write/destructive keyword -> safe; within max auto tier (safe) -> auto", "allowlist_violation": false}}
+{"step_number": 2, "action": "click", "target": {"strategy": "text_contains", "value": "Retrieve"}, "value": null, "attempts": 1, "status": "ok", "error": null}
+{"check": "success_condition", "status": "failed"}

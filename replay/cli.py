@@ -23,11 +23,12 @@ import argparse
 import json
 import sys
 import traceback
-from datetime import datetime, timezone
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from guardrail.policy import resolve_max_auto_tier
-from replay.engine import DEFAULT_RETRY_WAIT_S, replay_capability
+from replay.engine import DEFAULT_RETRY_WAIT_S, default_run_id, replay_capability
 from schema.capability import Capability
 from schema.guardrail import RiskTier
 from schema.replay import FailureDetail, ReplayResult
@@ -52,12 +53,28 @@ def main(argv=None) -> int:
 
     max_auto_tier = RiskTier(args.max_auto_tier) if args.max_auto_tier else resolve_max_auto_tier()
 
-    capability = Capability.model_validate_json(
-        Path(args.capability).read_text(encoding="utf-8")
-    )
+    # The capability file is loaded BEFORE the browser/engine, so it sits
+    # outside the setup try/except below and has no run_dir / Capability to hang
+    # a ReplayResult on yet. A missing file or a hand-broken artifact must still
+    # give one clear line, never a raw traceback (same contract as the rest of
+    # this CLI). Regression: tests/replay/test_cli.py.
+    try:
+        raw_capability = Path(args.capability).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"cannot read capability file {args.capability!r}: {exc}", file=sys.stderr)
+        return 1
+    try:
+        capability = Capability.model_validate_json(raw_capability)
+    except ValidationError as exc:
+        print(
+            f"invalid capability artifact {args.capability!r}: "
+            f"{exc.error_count()} validation error(s) -- {_short(str(exc))}",
+            file=sys.stderr,
+        )
+        return 1
     params = _parse_params(args.param)
 
-    run_id = args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = args.run_id or default_run_id()
     run_dir = Path(args.out_dir) / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"replay {capability.capability_id} v{capability.version}  "

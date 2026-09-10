@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from urllib.parse import urlsplit
 
 from schema.action import Action
@@ -62,9 +63,33 @@ SENSITIVE_FIELD_KEYWORDS = ("password", "passphrase", "ssn", "tax id", "pin")
 # Second, independent net: an SSN-shaped run of digits anywhere in the cleaned
 # text/attributes (inside a sentence, an attribute, wherever the label-adjacency
 # check can't reach). Kept deliberately small; same MVP-heuristic spirit.
-SSN_SHAPE_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+#
+# Anchored on "not flanked by another digit" rather than \b: DOM cleaning
+# concatenates adjacent inline text nodes, so a label and value that were in
+# separate <span>s can end up as "Password912-18-2247" with NO separator -- and
+# \b needs a word/non-word transition, which "d9" is not, so the SSN would slip
+# through unmasked. (?<!\d)...(?!\d) still fires there while continuing to skip a
+# fragment inside a longer digit run. Regression: tests/surface/test_dom_edge.py.
+SSN_SHAPE_RE = re.compile(r"(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)")
 
 MAX_AUTO_TIER_ENV = "AGENT_MAX_AUTO_RISK_TIER"
+
+
+def normalize_for_keywords(text: str) -> str:
+    """Fold a string before the substring keyword checks below.
+
+    Raw ``.lower()`` is not enough: a control's accessible name (or a field
+    label) can be spelled with Unicode that is visually identical to ASCII but
+    does not compare equal -- fullwidth ``"ＳＵＢＭＩＴ"``,
+    or a zero-width space wedged inside ``"pro​cess"`` / ``"S​SN"``.
+    Left unfolded, such a target slips past WRITE_KEYWORDS / DESTRUCTIVE_KEYWORDS
+    / SENSITIVE_FIELD_KEYWORDS and auto-executes (or a real SSN reaches the
+    model unmasked). So: drop Unicode "format" characters (Cf: U+200B..U+200D,
+    U+FEFF, soft hyphen, ...), NFKC-normalise compatibility forms, then
+    casefold. Regression: tests/guardrail/test_policy_edge.py.
+    """
+    stripped = "".join(ch for ch in (text or "") if unicodedata.category(ch) != "Cf")
+    return unicodedata.normalize("NFKC", stripped).casefold()
 
 
 def resolve_max_auto_tier() -> RiskTier:
@@ -79,7 +104,7 @@ def classify_risk(action: Action) -> RiskTier:
 
 
 def _classify(action: Action) -> tuple[RiskTier, str]:
-    text = (getattr(action.target, "value", "") or "").lower()
+    text = normalize_for_keywords(getattr(action.target, "value", ""))
 
     if action.action == "type":
         # A `type` into a sensitive field is unconditionally blocked -- same
@@ -165,7 +190,7 @@ def evaluate(
 def redact_type_value(field_label: str, value: str) -> str:
     """"[REDACTED]" if `field_label` looks like a secret field, else `value`
     unchanged. Keyword heuristic (see module docstring); a real redactor supersedes."""
-    label = (field_label or "").lower()
+    label = normalize_for_keywords(field_label)
     if any(kw in label for kw in SENSITIVE_FIELD_KEYWORDS):
         return "[REDACTED]"
     return value

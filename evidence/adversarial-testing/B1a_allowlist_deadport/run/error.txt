@@ -1,0 +1,24 @@
+Traceback (most recent call last):
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/replay/cli.py", line 94, in main
+    _sign_on_if_needed(page, capability.target_app)
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/replay/cli.py", line 152, in _sign_on_if_needed
+    page.goto(target_app)
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/.venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py", line 9006, in goto
+    self._sync(
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/.venv/lib/python3.12/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ^^^^^^^^^^^^^
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/.venv/lib/python3.12/site-packages/playwright/_impl/_page.py", line 551, in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/.venv/lib/python3.12/site-packages/playwright/_impl/_frame.py", line 145, in goto
+    await self._channel.send("goto", locals_to_params(locals()))
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py", line 61, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jvmedhana/Desktop/MedhanaJ/interface-ai/.venv/lib/python3.12/site-packages/playwright/_impl/_connection.py", line 528, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.Error: Page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5999/
+Call log:
+  - navigating to "http://127.0.0.1:5999/", waiting until "load"
+

@@ -1,0 +1,1 @@
+{"stage": "cli-setup", "status": "failed", "error": "Error: Page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5999/\nCall log:\n  - navigating to \"http://127.0.0.1:5999/\", waiting until \"load\"\n", "traceback_file": "error.txt"}

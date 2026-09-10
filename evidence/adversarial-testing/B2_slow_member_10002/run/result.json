@@ -1,0 +1,16 @@
+{
+  "status": "failure",
+  "capability_id": "lookup-savings-balance",
+  "version": "0.1.0",
+  "params": {
+    "member_number": "10002"
+  },
+  "outputs": null,
+  "business_outcome": null,
+  "failure": {
+    "step_number": 2,
+    "expected": "final page satisfies success_condition (text_contains 'Savings')",
+    "observed": "success_condition selector did not resolve on the final page",
+    "message": "flow completed but did not reach the recorded end state"
+  }
+}

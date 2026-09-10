@@ -1,0 +1,9 @@
+replay lookup-savings-balance v0.1.0  (max auto risk tier = safe)
+status:     failure
+capability: lookup-savings-balance v0.1.0
+params:     {'member_number': '10002'}
+failure at step 2
+  expected: final page satisfies success_condition (text_contains 'Savings')
+  observed: success_condition selector did not resolve on the final page
+  message:  flow completed but did not reach the recorded end state
+evidence:   evidence/adversarial-testing/B2_slow_member_10002/run/

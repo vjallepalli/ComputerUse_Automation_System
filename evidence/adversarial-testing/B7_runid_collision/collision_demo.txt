@@ -1,0 +1,15 @@
+OLD default (bare second-granularity UTC stamp):
+   20260910T060757Z
+   20260910T060757Z
+   20260910T060757Z
+   20260910T060757Z
+   20260910T060757Z
+  unique: 1 of 5   -> COLLISION: 5 runs share one dir
+
+NEW default_run_id() (microseconds + 6 hex chars):
+   replay-20260910T060757_625404Z_682dd8
+   replay-20260910T060757_625453Z_e03dbb
+   replay-20260910T060757_625470Z_4bd8fc
+   replay-20260910T060757_625475Z_afa9a0
+   replay-20260910T060757_625477Z_01cf81
+  unique: 5 of 5

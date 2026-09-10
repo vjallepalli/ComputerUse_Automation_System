@@ -1,0 +1,9 @@
+replay lookup-savings-balance v0.1.0  (max auto risk tier = safe)
+status:     failure
+capability: lookup-savings-balance v0.1.0
+params:     {'member_number': 'not_a_number'}
+failure at step 0
+  expected: parameter 'member_number' is a int
+  observed: member_number='not_a_number' (str)
+  message:  parameter 'member_number' is not a valid int
+evidence:   evidence/adversarial-testing/B6_param_type_mismatch/run/

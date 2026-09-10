@@ -1,5 +1,10 @@
 """replay CLI: a setup failure (target app down, browser launch fails, sign-on
-fails) becomes a failure ReplayResult, not a raw traceback. Playwright is faked."""
+fails) becomes a failure ReplayResult, not a raw traceback. Playwright is faked.
+
+The `*_capability_file_*` cases at the bottom were added in the adversarial pass:
+the capability file is loaded before the setup try/except, so a missing or
+hand-broken artifact used to dump a raw traceback -- now one clean line, exit 1.
+"""
 
 import playwright.sync_api
 
@@ -128,3 +133,45 @@ def test_browser_launch_failure_becomes_a_failure_result(tmp_path, monkeypatch, 
     assert result.status == "failure"
     assert "playwright install" in result.failure.observed
     assert "Traceback" not in (capsys.readouterr().out)
+
+
+# --- capability file: missing / malformed / schema-invalid ----------------
+# These fail before any browser work, so no playwright fake is needed.
+
+
+def _no_traceback(capsys):
+    combined = capsys.readouterr()
+    text = combined.out + combined.err
+    assert "Traceback (most recent call last)" not in text
+    return text
+
+
+def test_missing_capability_file_is_a_clean_error(tmp_path, capsys):
+    code = main(["--capability", str(tmp_path / "nope.json"), "--param", "member_number=1"])
+    assert code == 1
+    assert "cannot read capability file" in _no_traceback(capsys)
+
+
+def test_capability_path_is_a_directory_is_a_clean_error(tmp_path, capsys):
+    code = main(["--capability", str(tmp_path), "--param", "member_number=1"])
+    assert code == 1
+    _no_traceback(capsys)
+
+
+def test_malformed_json_capability_is_a_clean_error(tmp_path, capsys):
+    cap = tmp_path / "cap.json"
+    cap.write_text("{ this is not valid json ")
+    code = main(["--capability", str(cap), "--param", "member_number=1"])
+    assert code == 1
+    assert "invalid capability artifact" in _no_traceback(capsys)
+
+
+def test_schema_invalid_capability_is_a_clean_error(tmp_path, capsys):
+    # valid JSON, but missing required fields / wrong types for the schema
+    cap = tmp_path / "cap.json"
+    cap.write_text('{"capability_id": "x", "version": "not-semver", "steps": []}')
+    code = main(["--capability", str(cap), "--param", "member_number=1"])
+    assert code == 1
+    text = _no_traceback(capsys)
+    assert "invalid capability artifact" in text
+    assert "validation error" in text
