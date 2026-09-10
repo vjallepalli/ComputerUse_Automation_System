@@ -2,9 +2,7 @@
 
 **An LLM figures out a legacy banking UI once. From then on, the job runs without it.**
 
-I built this around a question the brief poses directly: banks and credit unions run a long tail
-of back-office software with no API — the only way in is the same UI a human operator uses. Paying
-a model to re-read and re-reason about that UI on every single invocation is slow, expensive, and
+Banks and credit unions run a long tail of back-office software with no API — the only way in is the same UI a human operator uses. Paying a model to re-read and re-reason about that UI on every single invocation is slow, expensive, and
 non-deterministic in exactly the place production automation can't afford to be.
 
 So the system works in two phases:
@@ -35,26 +33,29 @@ reviewer to find. [CLAUDE.md](CLAUDE.md) has the package-level conventions.
 From an end user's side, there are really only two moments that matter: **the first time** you
 ask for something new, and **every time after that**.
 
+**The first time** — discovery:
+
 ```
- FIRST TIME — Discovery                         EVERY TIME AFTER — Replay
- ───────────────────────                        ──────────────────────────
- "Look up member 10003's         ──┐             capability.json
-  savings balance"                 │             + member_number=10002
-                                    ▼                        │
-                        ┌──────────────────────┐             ▼
-                        │  observe  the page    │   ┌──────────────────────┐
-                        │  decide   what to do   │◄──│  same recorded steps │
-                        │  (LLM, one action/turn)│   │  re-run exactly       │
-                        │  act      on the browser│  │  NO model call        │
-                        └──────────┬───────────┘   └──────────┬───────────┘
-                                   │  repeats until               │
-                                   │  the goal is met              ▼
-                                   ▼                     success / business
-                        ┌──────────────────────┐         outcome / failure
-                        │ record the run as a   │         (typed, structured)
-                        │ typed, reusable        │
-                        │ Capability artifact    │
-                        └──────────────────────┘
+"Look up member 10003's savings balance"
+        │
+        ▼
+  observe the page → decide what to do (LLM, one action per turn) → act on the browser
+        │
+        │  repeats until the goal is met
+        ▼
+  record the run as a typed, reusable Capability artifact
+```
+
+**Every time after** — replay, no model involved:
+
+```
+capability.json + member_number=10002
+        │
+        ▼
+  re-run the same recorded steps, exactly — zero LLM calls
+        │
+        ▼
+  success / business_outcome / failure  (typed, structured result)
 ```
 
 Two more things happen on either side of that, whenever they're needed — not on every run:
