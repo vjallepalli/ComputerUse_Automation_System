@@ -1,4 +1,4 @@
-# AUDIT
+# CHECKLIST
 
 A self-audit against `project_requirements.txt`, section by section, done before submission —
 so gaps are disclosed by us, not discovered by a reviewer. Legend: ✅ implemented & verified ·
