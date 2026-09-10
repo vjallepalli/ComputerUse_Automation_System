@@ -2,7 +2,9 @@
 
 **An LLM figures out a legacy banking UI once. From then on, the job runs without it.**
 
-Banks and credit unions run a long tail of back-office software with no API — the only way in is the same UI a human operator uses. Paying a model to re-read and re-reason about that UI on every single invocation is slow, expensive, and
+I built this around a question the brief poses directly: banks and credit unions run a long tail
+of back-office software with no API — the only way in is the same UI a human operator uses. Paying
+a model to re-read and re-reason about that UI on every single invocation is slow, expensive, and
 non-deterministic in exactly the place production automation can't afford to be.
 
 So the system works in two phases:
@@ -20,13 +22,17 @@ test IDs, no semantic labels): every action is checked against a **safety guardr
 runs — writes and sensitive-data fields are never auto-executed — and when the system genuinely
 can't proceed safely, it **hands the same live browser session to a human**, waits, and resumes
 once they're done. Both are demonstrated end-to-end with real evidence in `/evidence/`, not just
-built and left untested — see the honest limits in [`SELF_CHECK.md`](SELF_CHECK.md) for what that testing
+built and left untested — see the honest limits in [`SELF_CHECK.md`](SELF_CHECK.md) for what that
+testing
 actually surfaced.
 
-See [REPORT.md](REPORT.md) for the full design write-up (architecture, artifact schema,
-determinism & error handling, heterogeneity, escalation, safety, cuts) and [`SELF_CHECK.md`](SELF_CHECK.md)
-for a section-by-section check against the brief, done before submission rather than left for a
-reviewer to find. [CLAUDE.md](CLAUDE.md) has the package-level conventions.
+The full thread the brief asks for — a goal, an LLM-driven run that completes it, a saved
+capability artifact, a deterministic replay with typed inputs/outputs and error handling, a human
+taking over the live session mid-run, and evidence from both a discovery and a replay run — is
+demonstrated end-to-end in `/evidence/`, not just described below.
+
+**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
+**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
 
 ## How it works
 
@@ -127,6 +133,13 @@ TARGET_APP_PORT=8080 python -m target_app
 - `POST /debug/reset` restores the in-memory seed (undoes sub-accounts opened
   during a session). Local-only, no login required.
 
+**What the UI actually looks like** — server-rendered, no test IDs, no
+semantic labels, exactly the kind of screen a real back-office banking app has:
+
+![Member Lookup screen — plain input, no test IDs, no framework polish](docs/member_lookup_screen.png)
+
+![Account Detail screen — a flat table with no semantic markup for the agent to key off of](docs/account_detail_screen.png)
+
 This system has two long-lived processes — the target app, and whatever
 command you're running against it. Use two terminals: one running
 `python -m target_app` throughout, the other for everything below.
@@ -217,3 +230,44 @@ target app, and no network access.
 replay runs, including one replay that hits the restricted-member business
 outcome and one discovery run that exercises the full guardrail +
 sensitive-data escalation + human handoff path.
+
+## Project structure
+
+```
+agent/        discovery loop, LLM decision-making (agent/decide.py), run recording (agent/record.py)
+surface/      Playwright DOM cleaning, label synthesis, sensitive-data masking, action execution
+guardrail/    risk classification (safe/confirm/blocked) and allowlist enforcement
+escalation/   human handoff — pause, live-session control transfer, resume/reject
+replay/       deterministic replay engine + CLI (no LLM calls, ever)
+schema/       Pydantic models — Capability, ReplayResult, GuardrailDecision, EscalationRequest
+target_app/   the legacy-hostile Flask app used as the demo surface (server-rendered, no test IDs)
+evidence/     curated logs from real discovery + replay runs (see above)
+tests/        mirrors the package layout above
+```
+
+`agent/orchestrator.py` (discovery) and `replay/engine.py` (replay) both call into
+`guardrail/` before any action executes and both use `surface/` for perception and
+action — see [`REPORT.md`](REPORT.md) §1 for why that sharing matters.
+
+## Background & references
+
+For anyone unfamiliar with why this problem exists in the first place — most
+back-office banking software genuinely has no API to integrate against, which is
+the whole premise this system is built around:
+
+- [Backbase — "Banking AI transformation: Why legacy systems can't be bolted
+  on"](https://www.backbase.com/blog/banking-legacy-systems) — on why legacy core
+  banking systems are monolithic, batch-oriented, and resistant to the kind of
+  API-first integration modern tooling assumes.
+- [Baseella — "What are Legacy Core Banking Systems?"](https://baseella.com/kb/what-are-legacy-core-banking-systems/) —
+  a plainer breakdown of common legacy banking architectures (mainframe,
+  on-premises, custom-built) and why "lack of API connectivity" specifically is
+  one of their defining, recurring traits.
+
+I found it useful, while building this, to relate the "record once, replay many"
+idea to consumer tools that do something structurally similar — autofill tools
+like Jobright, which drive an unfamiliar web form the way a human would rather
+than integrating against a site's API. The difference here is the record/replay
+split: this system runs the model once per unique task, then reuses a
+deterministic, typed artifact for every invocation after that, instead of
+re-reasoning with an LLM on every single run.

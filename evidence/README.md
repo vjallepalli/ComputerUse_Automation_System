@@ -34,3 +34,23 @@ Copies only; the originals are untouched under `artifacts/runs/`,
   guardrail stop is raised — before the human acts — so the SSN field is empty
   in them; the `*.after.dom.html` snapshot (post-human-input) shows the field
   as `value="[MASKED]"`.
+
+## Beyond the core deliverable
+
+The table above is the required minimum (§6, deliverable #3). Two optional
+stretch goals (§8 — see `REPORT.md` §8) were also built and verified live, with
+their own supplementary evidence kept separate from the curated set above so
+it doesn't compete with it:
+
+- **Multi-run stability** (`--repeat N` on replay) and **confidence & approval
+  gating** (`draft` → `approved` capabilities) — both verified live; see
+  `REPORT.md` §8 for the specific runs and results.
+- **`evidence/adversarial-testing/`** — supplementary evidence from a dedicated
+  adversarial testing pass (allowlist checks, malformed inputs, a genuinely
+  unreachable app, run-ID collisions, and more) that found and fixed 7 real
+  bugs — see `SELF_CHECK.md` for the summary and `REPORT.md` §6–7 for the two
+  findings worth knowing about (a Unicode keyword-evasion gap, a run-ID
+  collision).
+
+Neither is required to satisfy deliverable #3 — they're included for
+completeness, in case they're useful to a reviewer digging deeper.

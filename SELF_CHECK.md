@@ -1,6 +1,6 @@
-# CHECKLIST
+# SELF_CHECK
 
-A self-audit against `project_requirements.txt`, section by section, done before submission —
+A checklist against `project_requirements.txt`, section by section, done before submission —
 so gaps are disclosed by us, not discovered by a reviewer. Legend: ✅ implemented & verified ·
 🟡 implemented, partial or not verified live · ❌ not implemented.
 
@@ -100,6 +100,33 @@ exercised live via discovery + escalation, but no capability was recorded/replay
 
 ✅ Verified via a real `git log` scan across all history (not just the working tree) — no API
 key, no PII pattern, no `.env` ever committed.
+
+## Adversarial testing pass (after this audit)
+
+After the checks above, a dedicated adversarial testing pass added 116 new tests targeting edge
+cases across every package (Unicode/keyword-evasion attempts, schema validation gaps, DOM masking
+boundary cases, replay input handling) and found 7 genuine bugs, each fixed with a documented root
+cause and a regression test — notably a Unicode keyword-evasion gap in the guardrail and sensitive-
+data masking (fullwidth characters / zero-width spaces could bypass both), and a run-ID collision
+that silently overwrote evidence from two runs started in the same second. Full findings are in
+`REPORT.md` §6–7; supplementary live evidence from this pass is kept separate from the curated
+`/evidence/` folder, under `evidence/adversarial-testing/`.
+
+## Stretch goals (§8, optional — picked two, as the brief allows)
+
+Both are built on top of already-tested code rather than as standalone features, and both were
+verified live, not just via mocked tests:
+
+- **Multi-run stability** (`--repeat N` on replay) — verified live with 3/3 identical outputs on a
+  success case and 3/3 consistent classification on a business-outcome case.
+- **Confidence & approval gating** (`draft` → `approved` capability status) — the replay gate on a
+  draft capability reuses the existing escalation/handoff mechanism rather than a new one; verified
+  live that the gate fires, a one-time resume doesn't silently promote the file, and an explicitly
+  approved capability replays unattended with no gate.
+
+Full detail and reasoning in `REPORT.md` §8.
+
+**Final test count: 318 passing** (up from the original 161 built during core development).
 
 ## Known gaps not otherwise called out in REPORT.md §7
 

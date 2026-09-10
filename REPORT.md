@@ -12,12 +12,47 @@ instantly, without the AI involved at all. And when the recipe hits something it
 shouldn't handle alone — a risky action, or data it isn't allowed to see — it stops and hands the
 keyboard to a person, on the exact same screen, then takes it back once they're done.
 
+Everything below is the reasoning behind that. The thread itself — actually running, not just
+described — lives in `/evidence/`: a real goal, a real LLM-driven run, a saved capability, a
+deterministic replay with typed outputs and error handling, and a real human taking over a live
+session mid-run.
+
+![The working thread: goal → LLM-driven run → capability artifact → deterministic replay → result, with human escalation and evidence for both runs](docs/working-thread-diagram.svg)
+
 ## 1. Architecture
 
 I split the system into two halves that do very different jobs: **discovery**, where the AI is
 actually thinking, and **replay**, where it isn't. Here's the shape of the whole thing:
 
-![System architecture: discovery loop, shared guardrail check, and replay](docs/architecture-diagram.svg)
+```
+ FIRST TIME — Discovery (AI in the loop)              EVERY TIME AFTER — Replay (no AI, ever)
+ ─────────────────────────────────────                ───────────────────────────────────────
+
+ "Look up member 10003's                                capability.json
+  savings balance"                                      + member_number=10002
+        │                                                       │
+        ▼                                                       ▼
+ ┌──────────────────────────┐                          ┌──────────────────────────┐
+ │ observe   the page       │                          │ same recorded steps      │
+ │ decide    what to do     │                          │ re-run exactly           │
+ │ (Claude, one action/turn)│                          │ NO model call            │
+ └────────────┬─────────────┘                          └────────────┬─────────────┘
+              ▼
+ ┌──────────────────────────┐   ◄── SAME CHECK, called from both sides, not duplicated
+ │ guardrail check:          │
+ │ safe → act automatically  │
+ │ risky/sensitive → STOP,   │
+ │ hand the SAME live browser│
+ │ to a human, wait, resume  │
+ └────────────┬─────────────┘
+              │  repeats until the goal is met                         │
+              ▼                                                        ▼
+ ┌──────────────────────────┐                          success / business_outcome / failure
+ │ record the run as a       │                              (typed, structured result)
+ │ typed, reusable            │
+ │ Capability artifact        │  ── saved once ──────────────────────► reused above, forever
+ └──────────────────────────┘
+```
 
 The two halves share two things on purpose, drawn above as shared boxes rather than separate
 copies: the **guardrail check** and the **browser itself**. If I'd written the safety check twice —
@@ -42,6 +77,14 @@ banking software actually has. Reading structure lets me point at a specific, na
 ("the field labeled Member Number") that a script can click reliably later. A screenshot would
 tell the AI *where* something looks like a button, not *which* button it durably is — and that
 distinction is what makes replay trustworthy instead of fragile.
+
+Here's a concrete example of exactly how unhelpful a screenshot alone would be here — the
+sub-account form has three input fields with no visible labels tying them to their names in the
+markup (`f1`, `f2`, `f3`). This is the screen my label-synthesis fix (§1, `surface/dom.py`) exists
+to handle: I derive a usable label for each field from its neighboring cell text before the AI
+ever sees the page.
+
+![Open Sub-Account form — three unlabeled inputs, an inline SSN format hint, no test IDs](docs/Sub_account_form_screen.png)
 
 ## 2. Artifact schema
 
@@ -135,6 +178,10 @@ system picks the story back up from wherever the screen actually is, rather than
 whatever it originally planned to do — which matters, because by the time a person's done, the
 right next step might genuinely be different from what was proposed a moment ago.
 
+Here's what that actually looks like — a real stop, mid-run, not a mockup:
+
+![A real GUARDRAIL STOP — the agent proposed clicking "Open sub-account," which is a write action, and paused for a human decision](docs/guardrail_stop.png)
+
 I tested this for real, more than once, including the case that worried me most: a field asking to
 re-enter a member's SSN for verification. The system refuses to guess at that value — it can't see
 it, so it won't fabricate something plausible-looking and type it in. It waits for a person to type
@@ -142,6 +189,8 @@ the real value directly into the browser, notices that the page actually changed
 continues. I caught and fixed a real bug in exactly this flow, where the log used to still show the
 AI's *made-up* guess even though a human had overridden it — now it correctly shows nothing at all,
 because the AI never actually knew the real value in the first place.
+
+![The SSN escalation — a permanently "blocked" tier, not just a risky-action pause; the console shows [REDACTED] even for the AI's own fabricated guess, and the log records that a human handled it manually, never what was typed](docs/ssn_guardrail.png)
 
 ## 6. Safety
 
@@ -200,3 +249,30 @@ If I had more time, the first thing I'd build is a way for a person to review an
 recipe's risk level once, up front — the same trust model I already use for what a recipe reports
 back. After that: a second kind of interface, to prove the design actually holds up outside a
 browser, and a recorded, replayable version of the write flow to match the read flow's coverage.
+
+## 8. Stretch goals (optional — two, as the brief allows)
+
+I picked two, deliberately, because both extend systems I'd already built and tested rather than
+adding something disconnected — and both actually got run against the real app, not just written.
+
+**Multi-run stability.** `--repeat N` on replay runs the same recipe N times with the same inputs
+and reports whether the answer came back identical every time, plus how long each run took. I
+verified this live twice: three runs against a normal member came back with the exact same balance
+every time (0.98s–1.03s each); three runs against the restricted member all correctly classified
+the same way, with the report honestly saying "no successful runs" rather than inventing a
+comparison it couldn't make. That's real proof my replay is actually deterministic, not just
+designed to be.
+
+**Confidence & approval gating.** Every newly recorded recipe starts as `draft` — recording it once
+doesn't mean I trust it yet. If something tries to replay a draft recipe unattended, it doesn't
+just refuse with a flag — it stops the exact same way a risky action does: same pause, same
+live-session handoff, same resume/reject choice, just with a different, specific reason ("this has
+never been approved"). A person explicitly promotes it to `approved` with one command, which also
+shows them the stability numbers above if any exist, so the approval decision is based on real
+evidence when it's available. I verified all of this live: the gate correctly fired on an
+unapproved copy of my own recipe, resuming let that one run through without silently marking the
+file trustworthy forever, and after I explicitly approved it, the exact same recipe replayed with
+no gate at all.
+
+I like that these two work together: stability answers "does this actually work reliably," and
+approval answers "has a person actually looked at that evidence before I let this run unattended."
