@@ -24,6 +24,10 @@ uses -- resume runs this invocation only (no promotion), reject stops with
 exit 1. `python -m agent.approve` is the deliberate draft -> approved step. An
 already-approved capability skips the gate: no behaviour change.
 
+Loads .env (like agent/orchestrator.py) before reading any TARGET_APP_* /
+AGENT_MAX_AUTO_RISK_TIER env var, so a value set only in .env (not exported in
+the shell) is honoured -- see _load_dotenv() below.
+
 `replay_capability` guarantees "any escaped exception -> ReplayResult(failure)",
 but that only covers the engine. CLI-level SETUP -- browser launch, initial
 navigation, sign-on -- runs before the engine is called, so main() adds an OUTER
@@ -51,7 +55,26 @@ from schema.guardrail import RiskTier
 from schema.replay import FailureDetail, ReplayResult, StabilityReport
 
 
+def _load_dotenv() -> None:
+    # BUG (same root cause as target_app/__main__.py, found in the same pass):
+    # this CLI reads TARGET_APP_USERNAME / TARGET_APP_PASSWORD (in
+    # _sign_on_if_needed below) and AGENT_MAX_AUTO_RISK_TIER (via
+    # resolve_max_auto_tier) straight from os.environ with no load_dotenv()
+    # call anywhere in this file -- a value set ONLY in .env was silently
+    # ignored, unlike agent/orchestrator.py, which already loads .env first.
+    # NOTE: this does not touch ANTHROPIC_API_KEY -- replay never reads it
+    # (CLAUDE.md: "replay must run with no LLM key present"); load_dotenv()
+    # merely makes .env's OTHER values visible, it doesn't require any of them.
+    # Regression: tests/target_app/test_env_loading.py.
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()
+
+
 def main(argv=None) -> int:
+    _load_dotenv()
     parser = argparse.ArgumentParser(
         prog="python -m replay",
         description="Deterministically replay a Capability artifact (no LLM).",

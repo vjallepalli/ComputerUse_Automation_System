@@ -4,11 +4,20 @@ fails) becomes a failure ReplayResult, not a raw traceback. Playwright is faked.
 The `*_capability_file_*` cases at the bottom were added in the adversarial pass:
 the capability file is loaded before the setup try/except, so a missing or
 hand-broken artifact used to dump a raw traceback -- now one clean line, exit 1.
+
+`test_main_loads_dotenv_before_sign_on_*` is a regression for a genuine bug: this
+CLI read TARGET_APP_USERNAME/PASSWORD straight from os.environ with no
+load_dotenv() call (same root cause as target_app/__main__.py, see
+tests/target_app/test_env_loading.py) -- a value set only in .env was silently
+ignored during sign-on.
 """
 
+import os
 from datetime import datetime, timezone
 
+import dotenv
 import playwright.sync_api
+import pytest
 
 from replay.cli import main
 from schema.action import Target
@@ -183,3 +192,108 @@ def test_schema_invalid_capability_is_a_clean_error(tmp_path, capsys):
     text = _no_traceback(capsys)
     assert "invalid capability artifact" in text
     assert "validation error" in text
+
+
+# --- BUG regression: .env-only credentials were ignored during sign-on -----
+
+
+@pytest.fixture
+def isolated_environ():
+    """load_dotenv() mutates os.environ directly, bypassing monkeypatch's
+    setenv/delenv tracking -- snapshot + restore by hand."""
+    snapshot = dict(os.environ)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(snapshot)
+
+
+class _LoginFormPage:
+    """A login form IS present (unlike _FakePage above), so
+    _sign_on_if_needed actually reads TARGET_APP_USERNAME/PASSWORD and fills
+    the form -- the exact code path the bug was in."""
+
+    def __init__(self):
+        self.url = "http://127.0.0.1:5001/login"
+        self.filled: dict[str, str] = {}
+
+    def goto(self, *_a, **_k):
+        pass
+
+    def locator(self, selector):
+        class _Loc:
+            def count(self_inner):
+                return 1  # a login form is present
+
+        return _Loc()
+
+    def fill(self, selector, value):
+        self.filled[selector] = value
+
+    def click(self, *_a, **_k):
+        pass
+
+    def wait_for_load_state(self, *_a, **_k):
+        pass
+
+
+def test_main_loads_dotenv_before_sign_on_reads_credentials(
+    tmp_path, monkeypatch, isolated_environ
+):
+    env_file = tmp_path / ".env"
+    env_file.write_text("TARGET_APP_USERNAME=opuser\nTARGET_APP_PASSWORD=s3cret\n")
+    os.environ.pop("TARGET_APP_USERNAME", None)
+    os.environ.pop("TARGET_APP_PASSWORD", None)
+    real_load_dotenv = dotenv.load_dotenv
+    monkeypatch.setattr(dotenv, "load_dotenv",
+                        lambda *a, **k: real_load_dotenv(dotenv_path=env_file))
+
+    login_page = _LoginFormPage()
+
+    class _Context:
+        def new_page(self):
+            return login_page
+
+        def close(self):
+            pass
+
+    class _Browser:
+        def new_context(self):
+            return _Context()
+
+        def close(self):
+            pass
+
+    class _PW:
+        class chromium:
+            @staticmethod
+            def launch(**_k):
+                return _Browser()
+
+    class _CM:
+        def __enter__(self):
+            return _PW()
+
+        def __exit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", lambda: _CM())
+    monkeypatch.setattr(
+        "replay.cli.replay_capability",
+        lambda capability, params, page, **kwargs: ReplayResult(
+            status="success", capability_id=capability.capability_id,
+            version=capability.version, params=params, outputs={"savings_balance": "812.55"}),
+    )
+
+    cap = tmp_path / "cap.json"
+    cap.write_text(_capability_json())
+    code = main([
+        "--capability", str(cap), "--param", "member_number=10003",
+        "--out-dir", str(tmp_path / "evidence"), "--run-id", "testrun",
+    ])
+
+    assert code == 0
+    # the bug: without load_dotenv(), these would be the hardcoded "clerk"/"vault"
+    assert login_page.filled["input[name='u']"] == "opuser"
+    assert login_page.filled["input[name='p']"] == "s3cret"
