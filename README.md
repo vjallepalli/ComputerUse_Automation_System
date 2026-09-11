@@ -31,9 +31,6 @@ capability artifact, a deterministic replay with typed inputs/outputs and error 
 taking over the live session mid-run, and evidence from both a discovery and a replay run — is
 demonstrated end-to-end in `/evidence/`, not just described below.
 
-**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
-**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
-
 ## How it works
 
 From an end user's side, there are really only two moments that matter: **the first time** you
@@ -77,6 +74,10 @@ Two more things happen on either side of that, whenever they're needed — not o
 
 That's the whole shape: reason once, act carefully, replay cheaply — and know when to stop and
 ask a person instead of guessing.
+
+
+**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
+**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
 
 ## Requirements
 
