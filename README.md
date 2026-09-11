@@ -137,9 +137,9 @@ TARGET_APP_PORT=8080 python -m target_app
 **What the UI actually looks like** — server-rendered, no test IDs, no
 semantic labels, exactly the kind of screen a real back-office banking app has:
 
-![Member Lookup screen — plain input, no test IDs, no framework polish](docs/screenshots/member_lookup_screen.png)
+![Member Lookup screen — plain input, no test IDs, no framework polish](docs/member_lookup_screen.png)
 
-![Account Detail screen — a flat table with no semantic markup for the agent to key off of](docs/screenshots/account_detail_screen.png)
+![Account Detail screen — a flat table with no semantic markup for the agent to key off of](docs/account_detail_screen.png)
 
 This system has two long-lived processes — the target app, and whatever
 command you're running against it. Use two terminals: one running
