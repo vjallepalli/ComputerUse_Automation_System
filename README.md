@@ -29,7 +29,10 @@ actually surfaced.
 The full thread the brief asks for — a goal, an LLM-driven run that completes it, a saved
 capability artifact, a deterministic replay with typed inputs/outputs and error handling, a human
 taking over the live session mid-run, and evidence from both a discovery and a replay run — is
-demonstrated end-to-end in `/evidence/`
+demonstrated end-to-end in `/evidence/`, not just described below.
+
+**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
+**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
 
 ## How it works
 
@@ -75,13 +78,11 @@ Two more things happen on either side of that, whenever they're needed — not o
 That's the whole shape: reason once, act carefully, replay cheaply — and know when to stop and
 ask a person instead of guessing.
 
-**[Design write-up](REPORT.md)** · **[Self-check against the brief](SELF_CHECK.md)** ·
-**[Evidence from real runs](evidence/)** · **[Dev conventions](CLAUDE.md)**
-
 ## Requirements
 
 - Python 3.12+
-- An Anthropic API key (needed for **discovery** runs only — replay never calls it)
+- An Anthropic API key (needed for **discovery** runs only — replay never calls it).
+  Get one at [console.anthropic.com](https://console.anthropic.com) if you don't have one.
 - Playwright's Chromium browser
 
 ## Setup
@@ -136,13 +137,15 @@ TARGET_APP_PORT=8080 python -m target_app
 **What the UI actually looks like** — server-rendered, no test IDs, no
 semantic labels, exactly the kind of screen a real back-office banking app has:
 
-![Member Lookup screen — plain input, no test IDs, no framework polish](docs/member_lookup_screen.png)
+![Member Lookup screen — plain input, no test IDs, no framework polish](docs/screenshots/member_lookup_screen.png)
 
-![Account Detail screen — a flat table with no semantic markup for the agent to key off of](docs/account_detail_screen.png)
+![Account Detail screen — a flat table with no semantic markup for the agent to key off of](docs/screenshots/account_detail_screen.png)
 
 This system has two long-lived processes — the target app, and whatever
 command you're running against it. Use two terminals: one running
-`python -m target_app` throughout, the other for everything below.
+`python -m target_app` throughout, the other for everything below. **Each
+terminal needs its own `source .venv/bin/activate`** — a new terminal doesn't
+inherit it from the first one.
 
 ## Demo path
 
@@ -207,7 +210,9 @@ human decision in the terminal, using the same already-open browser session
 - `resume` — approve the agent's proposed action and let it execute, **or**,
   for a field requesting sensitive data (e.g. the SSN verification field),
   type the real value into the already-open browser yourself first, then
-  `resume` — the agent never autofills sensitive data itself.
+  `resume` — the agent never autofills sensitive data itself. For member
+  10003 specifically, the real value (visible on their account detail page,
+  `http://127.0.0.1:5001/member/10003`) is `912-18-2247`.
 - `reject` — stop the run cleanly.
 
 Run `POST /debug/reset` (or restart the target app) afterward if you want a
