@@ -118,8 +118,8 @@ real gap, named rather than hidden.
 - The allowlist-violation check is built and tested but never organically triggerable against this
   demo app, since nothing in it links off-site.
 
-Next: a human-reviewed risk tier per recipe, a second surface to prove the abstraction, and replay
-coverage for the write flow to match the read flow.
+**Future work (What I'd do if I had more time):** a human-reviewed risk tier per recipe, a second surface to prove the abstraction, and
+replay coverage for the write flow to match the read flow.
 
 ## 8. Stretch goals (two, as the brief allows)
 
