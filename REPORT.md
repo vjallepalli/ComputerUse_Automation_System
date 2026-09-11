@@ -20,7 +20,12 @@ the run into a typed Capability. Replay reads that Capability and executes the s
 
 Both halves share the same guardrail check and the same browser session, deliberately, not as
 separate copies — a duplicated safety check is a gap waiting to drift apart, and a shared browser
-session is what makes the human handoff (§5) real instead of simulated.
+session is what makes the human handoff (§5) real instead of simulated. One honest caveat on
+"surface-neutral": most of the action-target contract is (label, role, text), but one extraction
+strategy — `next_cell`, "the table cell after this one" — is web/table-specific. A production
+schema would replace it with an abstract spatial relation like `adjacent_value`, interpreted
+differently per surface (the next DOM cell on the web, a neighboring accessibility node on
+desktop); this prototype has the one web-specific primitive still exposed directly.
 
 **Single process, no queue or service split.** Discovery and replay run in one process against a
 local browser and the filesystem — no broker, no separate services. At this scale that's not a
@@ -76,6 +81,15 @@ working unmodified on a re-skinned instance of the same underlying vendor softwa
 find something, replay reports a specific failure instead of clicking the wrong thing — the signal
 a team needs to know a recipe has gone stale.
 
+The reuse model I'd build on top of this, not implemented but consistent with the schema as-is: a
+recipe is recorded once against a reference tenant and treated as the shared "vendor capability."
+Each other tenant gets a thin, reviewed override — a different base URL and, where labels genuinely
+differ, a swapped-in locator string for just the steps that need it — layered on top rather than a
+full re-recording. At invocation time, the shared steps run with the tenant's override applied
+where one exists. If a tenant's page stops matching even with its override, that tenant (not the
+whole capability) gets flagged as degraded and routed back to a human for re-recording, rather than
+silently misfiring.
+
 ## 5. Escalation & handoff
 
 Some actions an AI shouldn't take unsupervised — submitting a form that opens a real account,
@@ -103,8 +117,12 @@ could be defeated with unusual Unicode. Both fixed and tested.
 
 **Known limit:** the risk classifier is a keyword list, not real judgment — a proper version would
 have a person review and sign off on each recipe's risk level once, the same trust model already
-used for outputs (§2). Replay's saved result also still writes its raw input params unmasked — a
-real gap, named rather than hidden.
+used for outputs (§2). Replay's saved result also echoes input params (e.g. `member_number`)
+unmasked — consistent with the rest of the system, where an identifier like this is never treated
+as sensitive anywhere, while genuine secrets (SSN, passwords) are structurally prevented from ever
+becoming a capability parameter at all, since sensitive fields are guardrail-blocked from autofill
+(§5). Still, a production version would want explicit per-parameter sensitivity flags rather than
+relying on that implicit consistency holding forever.
 
 ## 7. Cuts
 
@@ -118,10 +136,10 @@ real gap, named rather than hidden.
 - The allowlist-violation check is built and tested but never organically triggerable against this
   demo app, since nothing in it links off-site.
 
-**Future work (What I'd do if I had more time):** a human-reviewed risk tier per recipe, a second surface to prove the abstraction, and
+**Next:** a human-reviewed risk tier per recipe, a second surface to prove the abstraction, and
 replay coverage for the write flow to match the read flow.
 
-## 8. Stretch goals (two, as the brief allows)
+### Beyond the minimum (two optional stretch goals, as the brief allows)
 
 Both extend already-tested systems rather than adding something disconnected, and both were
 verified live. **Multi-run stability** (`--repeat N` on replay) ran the same recipe 3x on a success
