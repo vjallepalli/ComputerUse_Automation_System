@@ -103,8 +103,7 @@ TARGET_APP_PORT=5001
 TARGET_APP_BASE_URL=http://127.0.0.1:5001
 TARGET_APP_USERNAME=clerk # local demo credentials, fake data only
 TARGET_APP_PASSWORD=vault
-AGENT_MAX_AUTO_RISK_TIER=safe # safe | confirm | blocked — see Safety in 
-REPORT.md
+AGENT_MAX_AUTO_RISK_TIER=safe # safe | confirm | blocked — see Safety in REPORT.md
 ```
 
 
