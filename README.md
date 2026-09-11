@@ -97,14 +97,16 @@ cp .env.example .env                 # fill in as below
 Edit `.env`:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...      # required for discovery; NOT read by replay
+ANTHROPIC_API_KEY=sk-ant-... # required for discovery; NOT read by replay
 AGENT_MODEL=claude-sonnet-5
 TARGET_APP_PORT=5001
 TARGET_APP_BASE_URL=http://127.0.0.1:5001
-TARGET_APP_USERNAME=clerk         # local demo credentials, fake data only
+TARGET_APP_USERNAME=clerk # local demo credentials, fake data only
 TARGET_APP_PASSWORD=vault
-AGENT_MAX_AUTO_RISK_TIER=safe     # safe | confirm | blocked — see Safety in REPORT.md
+AGENT_MAX_AUTO_RISK_TIER=safe # safe | confirm | blocked — see Safety in 
+REPORT.md
 ```
+
 
 ## Target app (`/target_app`)
 
@@ -118,7 +120,8 @@ python -m target_app
 
 Serves on **http://127.0.0.1:5001** by default. Port 5000 is commonly held by
 macOS Control Center (AirPlay Receiver), so the default is 5001; override with
-`TARGET_APP_PORT` (in `.env` or the environment):
+`TARGET_APP_PORT` — either set it in `.env` (keep `TARGET_APP_BASE_URL` in sync)
+or pass it inline for one run:
 
 ```bash
 TARGET_APP_PORT=8080 python -m target_app
@@ -133,13 +136,6 @@ TARGET_APP_PORT=8080 python -m target_app
   deliberately slow (exercises replay's retry-on-transient-slowness path).
 - `POST /debug/reset` restores the in-memory seed (undoes sub-accounts opened
   during a session). Local-only, no login required.
-
-**What the UI actually looks like** — server-rendered, no test IDs, no
-semantic labels, exactly the kind of screen a real back-office banking app has:
-
-![Member Lookup screen — plain input, no test IDs, no framework polish](docs/member_lookup_screen.png)
-
-![Account Detail screen — a flat table with no semantic markup for the agent to key off of](docs/account_detail_screen.png)
 
 This system has two long-lived processes — the target app, and whatever
 command you're running against it. Use two terminals: one running
